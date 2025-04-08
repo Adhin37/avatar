@@ -61,25 +61,69 @@ class AvatarLipSyncApp:
         self.render_frame = tk.Frame(self.avatar_frame, width=1000, height=600, bg="#11111b")
         self.render_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create the control panel below the 3D model
+        # Create the control panel below the 3D model (initially hidden)
         self.control_frame = ttk.Frame(self.main_frame)
         self.control_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Create a horizontal layout for controls
+        # Create initial audio selection area (dropzone)
+        self.create_audio_dropzone()
+        
+        # Create the playback controls (initially hidden)
+        self.create_playback_controls()
+        self.hide_playback_controls()
+        
+        # Status bar
+        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Initialize recording variables
+        self.audio_frames = []
+        self.stream = None
+        self.p = pyaudio.PyAudio()
+        
+        # Initialize OpenGL context
+        self.ctx = None
+        self.prog = None
+        self.vao = None
+        self.init_gl()
+        
+        # Load the 3D model directly from the resources folder
+        self.load_model_from_path("resources/female_head.obj")
+        
+    def create_audio_dropzone(self):
+        """Create a dropzone for audio file selection"""
+        self.dropzone_frame = ttk.Frame(self.control_frame, height=150)
+        self.dropzone_frame.pack(fill=tk.X, pady=20)
+        
+        # Create a drop zone with border
+        self.drop_area = tk.Frame(self.dropzone_frame, bg="#2e2e3e", bd=2, relief=tk.GROOVE)
+        self.drop_area.pack(fill=tk.BOTH, expand=True, padx=40, pady=10)
+        
+        # Add label and icon to drop zone
+        self.drop_icon = tk.Label(self.drop_area, text="🎵", font=("Helvetica", 24), bg="#2e2e3e", fg="#89b4fa")
+        self.drop_icon.pack(pady=(15, 5))
+        
+        self.drop_label = tk.Label(self.drop_area, 
+                                   text="Click here to select an audio file\nor drag and drop", 
+                                   font=("Helvetica", 12), 
+                                   bg="#2e2e3e", 
+                                   fg="#f8f8f2")
+        self.drop_label.pack(pady=5)
+        
+        # Bind click event
+        self.drop_area.bind("<Button-1>", self.load_audio)
+        self.drop_icon.bind("<Button-1>", self.load_audio)
+        self.drop_label.bind("<Button-1>", self.load_audio)
+        
+    def create_playback_controls(self):
+        """Create playback controls that will show after audio is loaded"""
+        # Horizontal layout for controls
         self.controls_layout = ttk.Frame(self.control_frame)
-        self.controls_layout.pack(fill=tk.X)
         
         # Audio time display (current time)
         self.current_time_var = tk.StringVar(value="0:00")
         self.current_time = ttk.Label(self.controls_layout, textvariable=self.current_time_var)
         self.current_time.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Rewind button
-        self.rewind_canvas = tk.Canvas(self.controls_layout, width=30, height=30, bg="#1e1e2e", highlightthickness=0)
-        self.rewind_canvas.pack(side=tk.LEFT, padx=5)
-        self.rewind_canvas.create_polygon(20, 15, 10, 15, 10, 7, 20, 15, fill="white")
-        self.rewind_canvas.create_polygon(20, 15, 10, 15, 10, 23, 20, 15, fill="white")
-        self.rewind_canvas.bind("<Button-1>", self.rewind_audio)
         
         # Round play/pause button with distinctive colors
         self.play_frame = ttk.Frame(self.controls_layout)
@@ -100,13 +144,6 @@ class AvatarLipSyncApp:
         # Bind click event to the canvas
         self.play_canvas.bind("<Button-1>", self.toggle_playback)
         
-        # Forward button
-        self.forward_canvas = tk.Canvas(self.controls_layout, width=30, height=30, bg="#1e1e2e", highlightthickness=0)
-        self.forward_canvas.pack(side=tk.LEFT, padx=5)
-        self.forward_canvas.create_polygon(10, 15, 20, 15, 20, 7, 10, 15, fill="white")
-        self.forward_canvas.create_polygon(10, 15, 20, 15, 20, 23, 10, 15, fill="white")
-        self.forward_canvas.bind("<Button-1>", self.forward_audio)
-        
         # Waveform canvas
         self.waveform_canvas = tk.Canvas(self.controls_layout, height=50, bg="#1e1e2e", highlightthickness=0)
         self.waveform_canvas.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
@@ -117,27 +154,17 @@ class AvatarLipSyncApp:
         self.total_time = ttk.Label(self.controls_layout, textvariable=self.total_time_var)
         self.total_time.pack(side=tk.LEFT, padx=10)
         
-        # Audio selector button (right-most control)
-        self.audio_button = ttk.Button(self.controls_layout, text="Select Audio", command=self.load_audio)
-        self.audio_button.pack(side=tk.LEFT, padx=(20, 0))
+    def show_playback_controls(self):
+        """Show the playback controls"""
+        # Hide dropzone
+        self.dropzone_frame.pack_forget()
         
-        # Status bar
-        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        # Show controls
+        self.controls_layout.pack(fill=tk.X)
         
-        # Initialize recording variables
-        self.audio_frames = []
-        self.stream = None
-        self.p = pyaudio.PyAudio()
-        
-        # Initialize OpenGL context
-        self.ctx = None
-        self.prog = None
-        self.vao = None
-        self.init_gl()
-        
-        # Load the 3D model directly from the resources folder
-        self.load_model_from_path("resources/female_head.obj")
+    def hide_playback_controls(self):
+        """Hide the playback controls"""
+        self.controls_layout.pack_forget()
         
     def init_gl(self):
         """Initialize OpenGL for 3D rendering"""
@@ -355,6 +382,9 @@ class AvatarLipSyncApp:
             filename = os.path.basename(file_path)
             self.status_bar.config(text=f"Loading audio file: {filename}")
             
+            # Show loading indicator
+            self.drop_label.config(text=f"Loading {filename}...", fg="#89b4fa")
+            
             # Process the audio file for lip sync in a separate thread
             threading.Thread(target=self.process_audio_for_lip_sync).start()
     
@@ -453,40 +483,6 @@ class AvatarLipSyncApp:
         if was_playing:
             self.start_playback()
     
-    def rewind_audio(self, event=None):
-        """Rewind audio by 10 seconds"""
-        if not self.audio_file:
-            return
-            
-        # Update time
-        self.current_playback_time = max(0, self.current_playback_time - 10)
-        
-        # Update frame if available
-        if len(self.phonemes) > 0:
-            self.current_frame = min(len(self.phonemes) - 1, 
-                                  int((self.current_playback_time / self.audio_duration) * len(self.phonemes)))
-        
-        # Update UI
-        self.current_time_var.set(self.format_time(self.current_playback_time))
-        self.update_waveform_display()
-    
-    def forward_audio(self, event=None):
-        """Forward audio by 10 seconds"""
-        if not self.audio_file:
-            return
-            
-        # Update time
-        self.current_playback_time = min(self.audio_duration, self.current_playback_time + 10)
-        
-        # Update frame if available
-        if len(self.phonemes) > 0:
-            self.current_frame = min(len(self.phonemes) - 1, 
-                                  int((self.current_playback_time / self.audio_duration) * len(self.phonemes)))
-        
-        # Update UI
-        self.current_time_var.set(self.format_time(self.current_playback_time))
-        self.update_waveform_display()
-    
     def process_audio_for_lip_sync(self):
         """Process audio to extract phoneme timing for lip sync"""
         try:
@@ -524,6 +520,11 @@ class AvatarLipSyncApp:
             
             # Update UI on the main thread
             self.root.after(0, lambda: self.status_bar.config(text="Lip sync data generated successfully"))
+            
+            # Show playback controls and hide dropzone
+            self.root.after(0, self.show_playback_controls)
+            
+            # Update waveform before auto-playing
             self.root.after(0, self.update_waveform_display)
             
             # Auto play after processing is complete
