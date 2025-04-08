@@ -6,21 +6,13 @@ import threading
 import numpy as np
 import pygame
 import librosa
-import wave
 import pyaudio
 import sounddevice as sd
 import soundfile as sf
 import time
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import math
 import random
-
-# For 3D mesh handling
-import trimesh
-import moderngl
-from pyrr import Matrix44
-import glfw
-import numpy as np
 
 class AvatarLipSyncApp:
     def __init__(self, root):
@@ -38,9 +30,9 @@ class AvatarLipSyncApp:
         self.style.configure("TLabel", background="#1e1e2e", foreground="#f8f8f2", font=("Helvetica", 10))
         
         # Initialize variables
-        self.avatar_model = None
-        self.mesh_vertices = None
-        self.mesh_indices = None
+        self.avatar_image = None
+        self.mouth_region = None  # Coordinates of mouth area (x1, y1, x2, y2)
+        self.mouth_frames = []    # Different mouth positions for animation
         self.audio_file = None
         self.is_playing = False
         self.phonemes = []
@@ -57,11 +49,15 @@ class AvatarLipSyncApp:
         self.avatar_frame = ttk.Frame(self.main_frame, width=1000, height=600)
         self.avatar_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Create a placeholder for the 3D rendering window
-        self.render_frame = tk.Frame(self.avatar_frame, width=1000, height=600, bg="#11111b")
-        self.render_frame.pack(fill=tk.BOTH, expand=True)
+        # Create a frame for the 2D image
+        self.image_frame = tk.Frame(self.avatar_frame, width=1000, height=600, bg="#11111b")
+        self.image_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create the control panel below the 3D model (initially hidden)
+        # Create label to display the avatar
+        self.avatar_label = tk.Label(self.image_frame, bg="#11111b")
+        self.avatar_label.pack(fill=tk.BOTH, expand=True)
+        
+        # Create the control panel below the avatar
         self.control_frame = ttk.Frame(self.main_frame)
         self.control_frame.pack(fill=tk.X, padx=10, pady=10)
         
@@ -81,15 +77,144 @@ class AvatarLipSyncApp:
         self.stream = None
         self.p = pyaudio.PyAudio()
         
-        # Initialize OpenGL context
-        self.ctx = None
-        self.prog = None
-        self.vao = None
-        self.init_gl()
+        # Load the avatar image
+        self.load_avatar_image("resources/female_avatar.png")  # Update with your image path
         
-        # Load the 3D model directly from the resources folder
-        self.load_model_from_path("resources/female_head.obj")
+        # Generate mouth frames for animation
+        self.generate_mouth_frames()
         
+    def load_avatar_image(self, image_path):
+        """Load the avatar image from file"""
+        try:
+            # If no path provided, try to use the image from the resources
+            if not os.path.exists(image_path):
+                # Fallback to sample path or use default
+                default_paths = ["resources/female_avatar.png", "female_avatar.png", "avatar.png"]
+                for path in default_paths:
+                    if os.path.exists(path):
+                        image_path = path
+                        break
+                else:
+                    self.status_bar.config(text="Error: Avatar image not found, please select one")
+                    self.select_avatar_image()
+                    return
+            
+            # Load and resize the image to fit the frame
+            img = Image.open(image_path)
+            
+            # Resize maintaining aspect ratio
+            display_width = 800
+            width_percent = (display_width / float(img.size[0]))
+            display_height = int((float(img.size[1]) * float(width_percent)))
+            
+            self.original_avatar = img.copy()
+            self.avatar_image = img.resize((display_width, display_height), Image.LANCZOS)
+            
+            # Define mouth region (adjust these values based on your image)
+            # Format: (x1, y1, x2, y2) as proportions of image width/height
+            # These values need to be adjusted based on your specific avatar image
+            mouth_x_center = display_width * 0.5  # Center of image horizontally
+            mouth_y_position = display_height * 0.58  # Lower middle area of face
+            mouth_width = display_width * 0.15
+            mouth_height = display_height * 0.05
+            
+            self.mouth_region = (
+                int(mouth_x_center - mouth_width/2),  # x1
+                int(mouth_y_position - mouth_height/2),  # y1
+                int(mouth_x_center + mouth_width/2),  # x2
+                int(mouth_y_position + mouth_height/2)   # y2
+            )
+            
+            # Display the image
+            self.display_avatar(self.avatar_image)
+            self.status_bar.config(text="Avatar image loaded successfully")
+            
+        except Exception as e:
+            self.status_bar.config(text=f"Error loading avatar image: {e}")
+            print(f"Error loading avatar image: {e}")
+    
+    def select_avatar_image(self):
+        """Allow user to select an avatar image"""
+        file_path = filedialog.askopenfilename(
+            title="Select Avatar Image",
+            filetypes=(("Image files", "*.png *.jpg *.jpeg"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            self.load_avatar_image(file_path)
+    
+    def display_avatar(self, img, mouth_openness=0):
+        """Display the avatar image with current mouth state"""
+        display_img = img.copy()
+        
+        # If we have mouth animation data, apply it
+        if mouth_openness > 0 and hasattr(self, 'mouth_frames') and len(self.mouth_frames) > 0:
+            # Select appropriate mouth frame based on openness
+            frame_index = min(len(self.mouth_frames)-1, int(mouth_openness * len(self.mouth_frames) / 30))
+            
+            if frame_index >= 0 and frame_index < len(self.mouth_frames):
+                mouth_frame = self.mouth_frames[frame_index]
+                
+                # Paste the mouth frame onto the avatar image
+                x1, y1, x2, y2 = self.mouth_region
+                display_img.paste(mouth_frame, (x1, y1, x2, y2), mouth_frame)
+        
+        # Convert to PhotoImage and display
+        photo = ImageTk.PhotoImage(display_img)
+        self.avatar_label.config(image=photo)
+        self.avatar_label.image = photo  # Keep reference to prevent garbage collection
+    
+    def generate_mouth_frames(self):
+        """Generate different mouth shapes for animation"""
+        if not self.avatar_image or not self.mouth_region:
+            return
+            
+        x1, y1, x2, y2 = self.mouth_region
+        mouth_width = x2 - x1
+        mouth_height = y2 - y1
+        
+        # Create a series of mouth shapes with different openness levels
+        num_frames = 8  # Number of different mouth positions
+        self.mouth_frames = []
+        
+        for i in range(num_frames):
+            # Create a transparent image for the mouth
+            mouth_img = Image.new('RGBA', (mouth_width, mouth_height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(mouth_img)
+            
+            # Calculate openness based on frame index
+            openness = i / (num_frames - 1)
+            
+            # Extract lip color from the original image (approximate)
+            lip_color = (208, 108, 103, 255)  # Pink-ish color for lips
+            
+            # Draw upper lip (fixed)
+            upper_lip_height = int(mouth_height * 0.4)
+            draw.ellipse((0, 0, mouth_width, upper_lip_height*2), fill=lip_color)
+            
+            # Draw lower lip with varying openness
+            lower_lip_y = int(mouth_height * (0.5 + 0.25 * openness))
+            lower_lip_height = int(mouth_height * 0.4)
+            draw.ellipse((0, lower_lip_y-lower_lip_height, mouth_width, lower_lip_y+lower_lip_height), fill=lip_color)
+            
+            # If mouth is open, draw black inside
+            if openness > 0.1:
+                inner_mouth_height = int(mouth_height * openness * 0.8)
+                inner_mouth_y = int(mouth_height * 0.5)
+                inner_mouth_width = int(mouth_width * 0.8)
+                inner_mouth_x = int(mouth_width * 0.1)
+                
+                draw.ellipse(
+                    (inner_mouth_x, inner_mouth_y-inner_mouth_height//2, 
+                     inner_mouth_x+inner_mouth_width, inner_mouth_y+inner_mouth_height//2), 
+                    fill=(40, 40, 40, 255)
+                )
+            
+            self.mouth_frames.append(mouth_img)
+        
+        # Display initial avatar with mouth closed
+        self.display_avatar(self.avatar_image)
+    
     def create_audio_dropzone(self):
         """Create a dropzone for audio file selection"""
         self.dropzone_frame = ttk.Frame(self.control_frame, height=150)
@@ -165,211 +290,7 @@ class AvatarLipSyncApp:
     def hide_playback_controls(self):
         """Hide the playback controls"""
         self.controls_layout.pack_forget()
-        
-    def init_gl(self):
-        """Initialize OpenGL for 3D rendering"""
-        # Initialize GLFW
-        if not glfw.init():
-            print("Failed to initialize GLFW")
-            return
-            
-        # Create a hidden window for OpenGL context
-        glfw.window_hint(glfw.VISIBLE, False)
-        self.gl_window = glfw.create_window(800, 600, "Hidden Window", None, None)
-        if not self.gl_window:
-            glfw.terminate()
-            print("Failed to create GLFW window")
-            return
-            
-        glfw.make_context_current(self.gl_window)
-        
-        # Create ModernGL context
-        self.ctx = moderngl.create_context()
-        
-        # Basic shaders for 3D model rendering
-        vertex_shader = '''
-            #version 330
-            uniform mat4 mvp;
-            in vec3 in_position;
-            in vec3 in_normal;
-            out vec3 v_normal;
-            
-            void main() {
-                gl_Position = mvp * vec4(in_position, 1.0);
-                v_normal = in_normal;
-            }
-        '''
-        
-        fragment_shader = '''
-            #version 330
-            in vec3 v_normal;
-            out vec4 f_color;
-            
-            void main() {
-                vec3 light = vec3(0.0, 0.0, 1.0);
-                float lum = max(dot(normalize(v_normal), normalize(light)), 0.0);
-                vec3 color = vec3(0.8, 0.2, 0.2); // Reddish color for red hair
-                f_color = vec4(color * (0.25 + 0.75 * lum), 1.0);
-            }
-        '''
-        
-        self.prog = self.ctx.program(
-            vertex_shader=vertex_shader,
-            fragment_shader=fragment_shader,
-        )
-        
-        # Setup an offscreen framebuffer for rendering to texture
-        self.fbo = self.ctx.framebuffer(
-            color_attachments=[self.ctx.texture((800, 600), 4)]
-        )
-        
-    def load_model_from_path(self, model_path):
-        """Load a 3D model file from a specific path"""
-        if not os.path.exists(model_path):
-            self.status_bar.config(text=f"Error: Model file not found at {model_path}")
-            return
-        
-        try:
-            # Load the model using trimesh
-            mesh = trimesh.load(model_path)
-            self.status_bar.config(text="3D model loaded successfully")
-            
-            # Extract vertices and faces
-            vertices = np.array(mesh.vertices, dtype='f4')
-            indices = np.array(mesh.faces, dtype='i4')
-            
-            # Calculate vertex normals if not available
-            if not hasattr(mesh, 'vertex_normals') or mesh.vertex_normals is None:
-                mesh.vertex_normals = np.zeros_like(mesh.vertices)
-                for face in mesh.faces:
-                    normal = np.cross(
-                        mesh.vertices[face[1]] - mesh.vertices[face[0]],
-                        mesh.vertices[face[2]] - mesh.vertices[face[0]]
-                    )
-                    normal = normal / np.linalg.norm(normal)
-                    mesh.vertex_normals[face[0]] += normal
-                    mesh.vertex_normals[face[1]] += normal
-                    mesh.vertex_normals[face[2]] += normal
-                
-                for i in range(len(mesh.vertex_normals)):
-                    if np.any(mesh.vertex_normals[i]):
-                        mesh.vertex_normals[i] = mesh.vertex_normals[i] / np.linalg.norm(mesh.vertex_normals[i])
-            
-            normals = np.array(mesh.vertex_normals, dtype='f4')
-            
-            # Store for later use
-            self.mesh_vertices = vertices
-            self.mesh_indices = indices
-            self.mesh_normals = normals
-            
-            # Find mouth vertices (this is a simplification - in a real app, you'd need to know the vertex indices of the mouth)
-            # For demonstration, we'll assume the mouth vertices are located in a specific Y range
-            # You'd need to modify this based on your actual model
-            y_min = np.percentile(vertices[:, 1], 45)  # Approximate position of mouth
-            y_max = np.percentile(vertices[:, 1], 50)
-            z_min = np.percentile(vertices[:, 2], 75)  # Front of face
-            
-            self.mouth_vertices_indices = np.where(
-                (vertices[:, 1] >= y_min) & 
-                (vertices[:, 1] <= y_max) & 
-                (vertices[:, 2] >= z_min)
-            )[0]
-            
-            print(f"Found {len(self.mouth_vertices_indices)} potential mouth vertices")
-            
-            # Create VBO and VAO
-            vbo = self.ctx.buffer(np.hstack([vertices, normals]).flatten().astype('f4').tobytes())
-            ibo = self.ctx.buffer(indices.flatten().astype('i4').tobytes())
-            
-            self.vao = self.ctx.vertex_array(
-                self.prog,
-                [
-                    (vbo, '3f 3f', 'in_position', 'in_normal')
-                ],
-                ibo
-            )
-            
-            # Store original vertices for animation
-            self.original_vertices = vertices.copy()
-            
-            # Initial render
-            self.render_model()
-            
-        except Exception as e:
-            self.status_bar.config(text=f"Error loading model: {e}")
-            print(f"Error loading model: {e}")
-            
-    def render_model(self):
-        """Render the 3D model to texture"""
-        if self.vao is None:
-            return
-            
-        # Setup viewport
-        self.ctx.viewport = (0, 0, 800, 600)
-        self.ctx.enable(moderngl.DEPTH_TEST)
-        
-        # Clear the framebuffer
-        self.fbo.use()
-        self.ctx.clear(0.1, 0.1, 0.1, 1.0)
-        
-        # Create model-view-projection matrix
-        proj = Matrix44.perspective_projection(45.0, 800/600, 0.1, 100.0)
-        view = Matrix44.look_at(
-            (0, 0, 2),  # Eye position
-            (0, 0, 0),  # Target
-            (0, 1, 0),  # Up vector
-        )
-        model = Matrix44.from_eulers([0, time.time() * 0.2, 0])
-        mvp = proj * view * model
-        
-        # Update uniform and render
-        self.prog['mvp'].write(mvp.astype('f4').tobytes())
-        self.vao.render()
-        
-        # Read pixels from the framebuffer
-        data = self.fbo.read(components=4)
-        image = Image.frombytes('RGBA', (800, 600), data).transpose(Image.FLIP_TOP_BOTTOM)
-        
-        # Convert to PhotoImage and display in Tkinter
-        photo = ImageTk.PhotoImage(image)
-        
-        # If a label exists, update it, otherwise create one
-        if hasattr(self, 'render_label'):
-            self.render_label.config(image=photo)
-            self.render_label.image = photo
-        else:
-            self.render_label = tk.Label(self.render_frame, image=photo, bg="#11111b")
-            self.render_label.image = photo
-            self.render_label.pack(fill=tk.BOTH, expand=True)
-        
-        # Continue animation if we're playing
-        if hasattr(self, 'is_playing') and self.is_playing:
-            self.root.after(30, self.render_model)
-        else:
-            self.root.after(100, self.render_model)
-        
-    def update_model_animation(self, mouth_openness):
-        """Update the 3D model based on lip sync data"""
-        if self.mesh_vertices is None or not hasattr(self, 'mouth_vertices_indices'):
-            return
-            
-        # In a real implementation, you would modify the vertices around the mouth
-        # based on the phoneme data
-        modified_vertices = self.original_vertices.copy()
-        
-        # Move the mouth vertices based on openness
-        if len(self.mouth_vertices_indices) > 0:
-            # Scale the movement based on openness (0-30)
-            scale = mouth_openness / 30.0
-            
-            # Move vertices down to open mouth
-            for idx in self.mouth_vertices_indices:
-                modified_vertices[idx, 1] -= scale * 0.05  # Move in Y direction
-        
-        # Update the vertex buffer
-        # Note: In a real app, you'd need to update the vertex buffer properly
-        # This simplified version just re-renders with the original vertices
-        
+    
     def load_audio(self, event=None):
         """Load an audio file"""
         file_path = filedialog.askopenfilename(
@@ -499,7 +420,7 @@ class AvatarLipSyncApp:
             
             # Extract audio features for lip sync
             # In a real app, you would use a phoneme detection model
-            # For this demo, we'll simulate phoneme detection using amplitude
+            # For this demo, we'll simulate mouth movement using amplitude
             
             # Get amplitude envelope
             hop_length = 512
@@ -595,7 +516,7 @@ class AvatarLipSyncApp:
                 sd.play(data[start_sample:], fs)
             
             # Frame timing and starting position
-            frame_duration = 0.512  # seconds (based on hop_length/sr)
+            frame_duration = 0.0512  # seconds (based on hop_length/sr)
             
             # Set starting frame based on current playback time
             if self.current_playback_time > 0 and self.audio_duration > 0:
@@ -620,7 +541,7 @@ class AvatarLipSyncApp:
                 mouth_openness = self.phonemes[self.current_frame]
                 
                 # Update on main thread
-                self.root.after(0, lambda o=mouth_openness: self.update_model_animation(o))
+                self.root.after(0, lambda o=mouth_openness: self.display_avatar(self.avatar_image, o))
                 
                 # Update waveform (less frequently to avoid UI lag)
                 if self.current_frame % 5 == 0:
@@ -636,7 +557,7 @@ class AvatarLipSyncApp:
                 self.current_playback_time = 0
                 self.root.after(0, lambda: self.current_time_var.set("0:00"))
                 self.root.after(0, self.stop_playback)
-                self.root.after(0, lambda: self.update_model_animation(0))
+                self.root.after(0, lambda: self.display_avatar(self.avatar_image, 0))
                 self.root.after(0, self.update_waveform_display)
                 
             # Stop audio
@@ -646,17 +567,9 @@ class AvatarLipSyncApp:
             self.root.after(0, lambda: self.status_bar.config(text=f"Error during playback: {e}"))
             self.is_playing = False
             self.root.after(0, self.stop_playback)
-    
-    def on_closing(self):
-        """Clean up resources before closing"""
-        if hasattr(self, 'gl_window') and self.gl_window:
-            glfw.destroy_window(self.gl_window)
-        glfw.terminate()
-        self.root.destroy()
 
 # Main application
 if __name__ == "__main__":
     root = tk.Tk()
     app = AvatarLipSyncApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
