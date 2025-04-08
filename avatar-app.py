@@ -1,385 +1,661 @@
-import sys
 import os
+import sys
+import tkinter as tk
+from tkinter import filedialog, ttk
 import threading
-import time
 import numpy as np
-import pyttsx3
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QTextEdit, QHBoxLayout, QOpenGLWidget
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread
-from PyQt5.QtGui import QPixmap, QPainter
-import cv2
+import pygame
+import librosa
+import wave
+import pyaudio
+import sounddevice as sd
+import soundfile as sf
+import time
+from PIL import Image, ImageTk
+import math
+import random
+
+# For 3D mesh handling
 import trimesh
-import pyrender
-import speech_recognition as sr
-
-# For blendshape animations
-from scipy.spatial.transform import Rotation as R
+import moderngl
+from pyrr import Matrix44
 import glfw
-from OpenGL.GL import *
-from OpenGL.GLU import *
-from pywavefront import Wavefront
+import numpy as np
 
-female_head = os.path.join(os.path.join(os.getcwd(), "ressources"), "female_red_head.obj")
-
-class VoiceGenerator(QObject):
-    finished = pyqtSignal(str)
-    phoneme_signal = pyqtSignal(str, float)  # Phoneme and its duration
-    
-    def __init__(self):
-        super().__init__()
-        self.engine = pyttsx3.init()
-        # Set up an attractive female voice
-        voices = self.engine.getProperty('voices')
-        # Try to find a female voice in the available voices
-        female_voice = None
-        for voice in voices:
-            if "female" in voice.name.lower():
-                female_voice = voice.id
-                break
+class AvatarLipSyncApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Avatar Lip Sync App")
+        self.root.geometry("1200x800")
+        self.root.configure(bg="#1e1e2e")
         
-        # If no explicitly female voice is found, try to use the second voice (often female)
-        if female_voice is None and len(voices) > 1:
-            female_voice = voices[1].id
-        # Otherwise use whatever voice is available
-        elif female_voice is None and len(voices) > 0:
-            female_voice = voices[0].id
+        # Set application style
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        self.style.configure("TButton", background="#7f849c", foreground="#f8f8f2", font=("Helvetica", 10, "bold"), borderwidth=0)
+        self.style.map("TButton", background=[("active", "#89b4fa")])
+        self.style.configure("TFrame", background="#1e1e2e")
+        self.style.configure("TLabel", background="#1e1e2e", foreground="#f8f8f2", font=("Helvetica", 10))
+        
+        # Initialize variables
+        self.avatar_model = None
+        self.mesh_vertices = None
+        self.mesh_indices = None
+        self.audio_file = None
+        self.is_playing = False
+        self.phonemes = []
+        self.current_frame = 0
+        self.audio_data = None
+        self.audio_duration = 0
+        self.current_playback_time = 0
+        
+        # Create the main frame
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Create the avatar display area
+        self.avatar_frame = ttk.Frame(self.main_frame, width=1000, height=600)
+        self.avatar_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create a placeholder for the 3D rendering window
+        self.render_frame = tk.Frame(self.avatar_frame, width=1000, height=600, bg="#11111b")
+        self.render_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create the control panel below the 3D model
+        self.control_frame = ttk.Frame(self.main_frame)
+        self.control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Create a horizontal layout for controls
+        self.controls_layout = ttk.Frame(self.control_frame)
+        self.controls_layout.pack(fill=tk.X)
+        
+        # Audio time display (current time)
+        self.current_time_var = tk.StringVar(value="0:00")
+        self.current_time = ttk.Label(self.controls_layout, textvariable=self.current_time_var)
+        self.current_time.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Rewind button
+        self.rewind_canvas = tk.Canvas(self.controls_layout, width=30, height=30, bg="#1e1e2e", highlightthickness=0)
+        self.rewind_canvas.pack(side=tk.LEFT, padx=5)
+        self.rewind_canvas.create_polygon(20, 15, 10, 15, 10, 7, 20, 15, fill="white")
+        self.rewind_canvas.create_polygon(20, 15, 10, 15, 10, 23, 20, 15, fill="white")
+        self.rewind_canvas.bind("<Button-1>", self.rewind_audio)
+        
+        # Round play/pause button with distinctive colors
+        self.play_frame = ttk.Frame(self.controls_layout)
+        self.play_frame.pack(side=tk.LEFT, padx=10)
+        
+        # Create a round play button using Canvas
+        self.play_canvas = tk.Canvas(self.play_frame, width=50, height=50, bg="#1e1e2e", highlightthickness=0)
+        self.play_canvas.pack()
+        
+        # Draw circle for play button (initial state)
+        self.play_bg_color = "#4CAF50"  # Green for play
+        self.pause_bg_color = "#FF5722"  # Orange for pause
+        self.play_circle = self.play_canvas.create_oval(5, 5, 45, 45, fill=self.play_bg_color, outline="")
+        
+        # Draw play triangle initially
+        self.play_symbol = self.play_canvas.create_polygon(20, 15, 20, 35, 35, 25, fill="white")
+        
+        # Bind click event to the canvas
+        self.play_canvas.bind("<Button-1>", self.toggle_playback)
+        
+        # Forward button
+        self.forward_canvas = tk.Canvas(self.controls_layout, width=30, height=30, bg="#1e1e2e", highlightthickness=0)
+        self.forward_canvas.pack(side=tk.LEFT, padx=5)
+        self.forward_canvas.create_polygon(10, 15, 20, 15, 20, 7, 10, 15, fill="white")
+        self.forward_canvas.create_polygon(10, 15, 20, 15, 20, 23, 10, 15, fill="white")
+        self.forward_canvas.bind("<Button-1>", self.forward_audio)
+        
+        # Waveform canvas
+        self.waveform_canvas = tk.Canvas(self.controls_layout, height=50, bg="#1e1e2e", highlightthickness=0)
+        self.waveform_canvas.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        self.waveform_canvas.bind("<Button-1>", self.seek_audio)
+        
+        # Audio time display (total time)
+        self.total_time_var = tk.StringVar(value="0:00")
+        self.total_time = ttk.Label(self.controls_layout, textvariable=self.total_time_var)
+        self.total_time.pack(side=tk.LEFT, padx=10)
+        
+        # Audio selector button (right-most control)
+        self.audio_button = ttk.Button(self.controls_layout, text="Select Audio", command=self.load_audio)
+        self.audio_button.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # Status bar
+        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Initialize recording variables
+        self.audio_frames = []
+        self.stream = None
+        self.p = pyaudio.PyAudio()
+        
+        # Initialize OpenGL context
+        self.ctx = None
+        self.prog = None
+        self.vao = None
+        self.init_gl()
+        
+        # Load the 3D model directly from the resources folder
+        self.load_model_from_path("resources/female_head.obj")
+        
+    def init_gl(self):
+        """Initialize OpenGL for 3D rendering"""
+        # Initialize GLFW
+        if not glfw.init():
+            print("Failed to initialize GLFW")
+            return
             
-        if female_voice:
-            self.engine.setProperty('voice', female_voice)
+        # Create a hidden window for OpenGL context
+        glfw.window_hint(glfw.VISIBLE, False)
+        self.gl_window = glfw.create_window(800, 600, "Hidden Window", None, None)
+        if not self.gl_window:
+            glfw.terminate()
+            print("Failed to create GLFW window")
+            return
+            
+        glfw.make_context_current(self.gl_window)
         
-        # Adjust voice properties for an attractive sound
-        self.engine.setProperty('rate', 150)  # Speed of speech
-        self.engine.setProperty('volume', 0.9)  # Volume (0.0 to 1.0)
+        # Create ModernGL context
+        self.ctx = moderngl.create_context()
         
-        # Set up callback for word and phoneme events
-        self.engine.connect('started-word', self.on_word)
+        # Basic shaders for 3D model rendering
+        vertex_shader = '''
+            #version 330
+            uniform mat4 mvp;
+            in vec3 in_position;
+            in vec3 in_normal;
+            out vec3 v_normal;
+            
+            void main() {
+                gl_Position = mvp * vec4(in_position, 1.0);
+                v_normal = in_normal;
+            }
+        '''
         
-        # Phoneme mapping for lip sync
-        self.phoneme_map = {
-            'AA': 'ah', 'AE': 'ae', 'AH': 'ah', 'AO': 'oh',
-            'AW': 'aw', 'AY': 'ay', 'B': 'b', 'CH': 'ch',
-            'D': 'd', 'DH': 'th', 'EH': 'eh', 'ER': 'er',
-            'EY': 'ey', 'F': 'f', 'G': 'g', 'HH': 'h',
-            'IH': 'ih', 'IY': 'ee', 'JH': 'j', 'K': 'k',
-            'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng',
-            'OW': 'oh', 'OY': 'oy', 'P': 'p', 'R': 'r',
-            'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th',
-            'UH': 'uh', 'UW': 'oo', 'V': 'v', 'W': 'w',
-            'Y': 'y', 'Z': 'z', 'ZH': 'zh'
-        }
+        fragment_shader = '''
+            #version 330
+            in vec3 v_normal;
+            out vec4 f_color;
+            
+            void main() {
+                vec3 light = vec3(0.0, 0.0, 1.0);
+                float lum = max(dot(normalize(v_normal), normalize(light)), 0.0);
+                vec3 color = vec3(0.8, 0.2, 0.2); // Reddish color for red hair
+                f_color = vec4(color * (0.25 + 0.75 * lum), 1.0);
+            }
+        '''
+        
+        self.prog = self.ctx.program(
+            vertex_shader=vertex_shader,
+            fragment_shader=fragment_shader,
+        )
+        
+        # Setup an offscreen framebuffer for rendering to texture
+        self.fbo = self.ctx.framebuffer(
+            color_attachments=[self.ctx.texture((800, 600), 4)]
+        )
+        
+    def load_model_from_path(self, model_path):
+        """Load a 3D model file from a specific path"""
+        if not os.path.exists(model_path):
+            self.status_bar.config(text=f"Error: Model file not found at {model_path}")
+            return
+        
+        try:
+            # Load the model using trimesh
+            mesh = trimesh.load(model_path)
+            self.status_bar.config(text="3D model loaded successfully")
+            
+            # Extract vertices and faces
+            vertices = np.array(mesh.vertices, dtype='f4')
+            indices = np.array(mesh.faces, dtype='i4')
+            
+            # Calculate vertex normals if not available
+            if not hasattr(mesh, 'vertex_normals') or mesh.vertex_normals is None:
+                mesh.vertex_normals = np.zeros_like(mesh.vertices)
+                for face in mesh.faces:
+                    normal = np.cross(
+                        mesh.vertices[face[1]] - mesh.vertices[face[0]],
+                        mesh.vertices[face[2]] - mesh.vertices[face[0]]
+                    )
+                    normal = normal / np.linalg.norm(normal)
+                    mesh.vertex_normals[face[0]] += normal
+                    mesh.vertex_normals[face[1]] += normal
+                    mesh.vertex_normals[face[2]] += normal
+                
+                for i in range(len(mesh.vertex_normals)):
+                    if np.any(mesh.vertex_normals[i]):
+                        mesh.vertex_normals[i] = mesh.vertex_normals[i] / np.linalg.norm(mesh.vertex_normals[i])
+            
+            normals = np.array(mesh.vertex_normals, dtype='f4')
+            
+            # Store for later use
+            self.mesh_vertices = vertices
+            self.mesh_indices = indices
+            self.mesh_normals = normals
+            
+            # Find mouth vertices (this is a simplification - in a real app, you'd need to know the vertex indices of the mouth)
+            # For demonstration, we'll assume the mouth vertices are located in a specific Y range
+            # You'd need to modify this based on your actual model
+            y_min = np.percentile(vertices[:, 1], 45)  # Approximate position of mouth
+            y_max = np.percentile(vertices[:, 1], 50)
+            z_min = np.percentile(vertices[:, 2], 75)  # Front of face
+            
+            self.mouth_vertices_indices = np.where(
+                (vertices[:, 1] >= y_min) & 
+                (vertices[:, 1] <= y_max) & 
+                (vertices[:, 2] >= z_min)
+            )[0]
+            
+            print(f"Found {len(self.mouth_vertices_indices)} potential mouth vertices")
+            
+            # Create VBO and VAO
+            vbo = self.ctx.buffer(np.hstack([vertices, normals]).flatten().astype('f4').tobytes())
+            ibo = self.ctx.buffer(indices.flatten().astype('i4').tobytes())
+            
+            self.vao = self.ctx.vertex_array(
+                self.prog,
+                [
+                    (vbo, '3f 3f', 'in_position', 'in_normal')
+                ],
+                ibo
+            )
+            
+            # Store original vertices for animation
+            self.original_vertices = vertices.copy()
+            
+            # Initial render
+            self.render_model()
+            
+        except Exception as e:
+            self.status_bar.config(text=f"Error loading model: {e}")
+            print(f"Error loading model: {e}")
+            
+    def render_model(self):
+        """Render the 3D model to texture"""
+        if self.vao is None:
+            return
+            
+        # Setup viewport
+        self.ctx.viewport = (0, 0, 800, 600)
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        
+        # Clear the framebuffer
+        self.fbo.use()
+        self.ctx.clear(0.1, 0.1, 0.1, 1.0)
+        
+        # Create model-view-projection matrix
+        proj = Matrix44.perspective_projection(45.0, 800/600, 0.1, 100.0)
+        view = Matrix44.look_at(
+            (0, 0, 2),  # Eye position
+            (0, 0, 0),  # Target
+            (0, 1, 0),  # Up vector
+        )
+        model = Matrix44.from_eulers([0, time.time() * 0.2, 0])
+        mvp = proj * view * model
+        
+        # Update uniform and render
+        self.prog['mvp'].write(mvp.astype('f4').tobytes())
+        self.vao.render()
+        
+        # Read pixels from the framebuffer
+        data = self.fbo.read(components=4)
+        image = Image.frombytes('RGBA', (800, 600), data).transpose(Image.FLIP_TOP_BOTTOM)
+        
+        # Convert to PhotoImage and display in Tkinter
+        photo = ImageTk.PhotoImage(image)
+        
+        # If a label exists, update it, otherwise create one
+        if hasattr(self, 'render_label'):
+            self.render_label.config(image=photo)
+            self.render_label.image = photo
+        else:
+            self.render_label = tk.Label(self.render_frame, image=photo, bg="#11111b")
+            self.render_label.image = photo
+            self.render_label.pack(fill=tk.BOTH, expand=True)
+        
+        # Continue animation if we're playing
+        if hasattr(self, 'is_playing') and self.is_playing:
+            self.root.after(30, self.render_model)
+        else:
+            self.root.after(100, self.render_model)
+        
+    def update_model_animation(self, mouth_openness):
+        """Update the 3D model based on lip sync data"""
+        if self.mesh_vertices is None or not hasattr(self, 'mouth_vertices_indices'):
+            return
+            
+        # In a real implementation, you would modify the vertices around the mouth
+        # based on the phoneme data
+        modified_vertices = self.original_vertices.copy()
+        
+        # Move the mouth vertices based on openness
+        if len(self.mouth_vertices_indices) > 0:
+            # Scale the movement based on openness (0-30)
+            scale = mouth_openness / 30.0
+            
+            # Move vertices down to open mouth
+            for idx in self.mouth_vertices_indices:
+                modified_vertices[idx, 1] -= scale * 0.05  # Move in Y direction
+        
+        # Update the vertex buffer
+        # Note: In a real app, you'd need to update the vertex buffer properly
+        # This simplified version just re-renders with the original vertices
+        
+    def load_audio(self, event=None):
+        """Load an audio file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Audio File",
+            filetypes=(("Audio files", "*.wav *.mp3 *.ogg"), ("All files", "*.*"))
+        )
+        
+        if file_path:
+            self.audio_file = file_path
+            filename = os.path.basename(file_path)
+            self.status_bar.config(text=f"Loading audio file: {filename}")
+            
+            # Process the audio file for lip sync in a separate thread
+            threading.Thread(target=self.process_audio_for_lip_sync).start()
     
-    def on_word(self, name, location, length):
-        # This would be called when a word starts
-        # In a production app, you'd use more sophisticated phoneme extraction
-        pass
-        
-    def speak_text(self, text):
-        # For better phoneme extraction in a real app, you would:
-        # 1. Use a dedicated phoneme extractor library
-        # 2. Or use a TTS service that provides phoneme timing data
-        
-        # Simple simulation of phoneme extraction for demonstration
-        phonemes = self.simple_phoneme_extraction(text)
-        
-        # Emit phonemes with timing for lip sync
-        for phoneme, duration in phonemes:
-            self.phoneme_signal.emit(phoneme, duration)
-            time.sleep(duration)  # Simulate the timing
-        
-        # Actually speak the text
-        self.engine.say(text)
-        self.engine.runAndWait()
-        self.finished.emit("Speech completed")
+    def format_time(self, seconds):
+        """Format time in minutes:seconds"""
+        minutes = int(seconds // 60)
+        seconds = int(seconds % 60)
+        return f"{minutes}:{seconds:02d}"
     
-    def simple_phoneme_extraction(self, text):
-        # Very simplified phoneme extraction
-        # In a real application, use a dedicated library like CMU Sphinx
-        phonemes = []
-        for char in text:
-            if char.lower() in 'aeiou':
-                # Vowels - longer duration
-                phonemes.append((char.lower(), 0.15))
-            elif char.isalpha():
-                # Consonants - shorter duration
-                phonemes.append((char.lower(), 0.08))
+    def update_waveform_display(self):
+        """Draw the audio waveform on the canvas"""
+        # Get canvas dimensions
+        width = self.waveform_canvas.winfo_width()
+        height = self.waveform_canvas.winfo_height()
+        
+        if width <= 1:  # Canvas not yet realized
+            self.root.after(100, self.update_waveform_display)
+            return
+            
+        # Clear current waveform
+        self.waveform_canvas.delete("all")
+        
+        # Draw background
+        self.waveform_canvas.create_rectangle(0, 0, width, height, fill="#2e2e3e", outline="")
+        
+        if self.audio_data is not None and len(self.audio_data) > 0:
+            # Calculate waveform data points
+            samples_per_pixel = max(1, len(self.audio_data) // width)
+            waveform_points = []
+            
+            for i in range(0, width):
+                start = i * samples_per_pixel
+                end = min(len(self.audio_data), (i + 1) * samples_per_pixel)
+                if start < len(self.audio_data):
+                    # Calculate average amplitude for this segment
+                    segment = self.audio_data[start:end]
+                    if len(segment) > 0:
+                        amplitude = np.max(np.abs(segment)) * height / 2
+                        # Ensure minimum visibility
+                        amplitude = max(2, amplitude)
+                        center_y = height / 2
+                        waveform_points.append((i, center_y - amplitude, i, center_y + amplitude))
+            
+            # Draw waveform bars
+            for i, (x, y1, x2, y2) in enumerate(waveform_points):
+                # Alternate colors for played/unplayed sections
+                if self.current_playback_time > 0 and self.audio_duration > 0:
+                    progress_x = (self.current_playback_time / self.audio_duration) * width
+                    color = "#89b4fa" if x < progress_x else "#7f849c"  # Blue for played, gray for unplayed
+                else:
+                    color = "#7f849c"
+                    
+                self.waveform_canvas.create_line(x, y1, x, y2, fill=color, width=1)
+            
+            # Draw playhead
+            if self.current_playback_time > 0 and self.audio_duration > 0:
+                playhead_x = (self.current_playback_time / self.audio_duration) * width
+                self.waveform_canvas.create_line(playhead_x, 0, playhead_x, height, fill="#ff5555", width=2)
+        else:
+            # Draw placeholder waveform
+            center_y = height / 2
+            for i in range(0, width, 3):
+                # Generate a random height for the waveform line
+                line_height = random.randint(1, 5)
+                self.waveform_canvas.create_line(i, center_y - line_height, 
+                                             i, center_y + line_height, 
+                                             fill="#7f849c", width=1)
+    
+    def seek_audio(self, event):
+        """Seek to a position in the audio when clicking on waveform"""
+        if not self.audio_file or not self.phonemes:
+            return
+            
+        # Calculate position
+        width = self.waveform_canvas.winfo_width()
+        click_position = event.x / width
+        
+        # Update current playback time
+        self.current_playback_time = click_position * self.audio_duration
+        
+        # If playing, stop and restart from new position
+        was_playing = self.is_playing
+        if self.is_playing:
+            self.stop_playback()
+            
+        # Calculate frame number
+        if len(self.phonemes) > 0:
+            self.current_frame = min(len(self.phonemes) - 1, 
+                                     int(click_position * len(self.phonemes)))
+            
+        # Update UI
+        self.current_time_var.set(self.format_time(self.current_playback_time))
+        self.update_waveform_display()
+        
+        # Restart playback if it was playing
+        if was_playing:
+            self.start_playback()
+    
+    def rewind_audio(self, event=None):
+        """Rewind audio by 10 seconds"""
+        if not self.audio_file:
+            return
+            
+        # Update time
+        self.current_playback_time = max(0, self.current_playback_time - 10)
+        
+        # Update frame if available
+        if len(self.phonemes) > 0:
+            self.current_frame = min(len(self.phonemes) - 1, 
+                                  int((self.current_playback_time / self.audio_duration) * len(self.phonemes)))
+        
+        # Update UI
+        self.current_time_var.set(self.format_time(self.current_playback_time))
+        self.update_waveform_display()
+    
+    def forward_audio(self, event=None):
+        """Forward audio by 10 seconds"""
+        if not self.audio_file:
+            return
+            
+        # Update time
+        self.current_playback_time = min(self.audio_duration, self.current_playback_time + 10)
+        
+        # Update frame if available
+        if len(self.phonemes) > 0:
+            self.current_frame = min(len(self.phonemes) - 1, 
+                                  int((self.current_playback_time / self.audio_duration) * len(self.phonemes)))
+        
+        # Update UI
+        self.current_time_var.set(self.format_time(self.current_playback_time))
+        self.update_waveform_display()
+    
+    def process_audio_for_lip_sync(self):
+        """Process audio to extract phoneme timing for lip sync"""
+        try:
+            # Load the audio file
+            y, sr = librosa.load(self.audio_file)
+            
+            # Store raw audio data for waveform display
+            self.audio_data = y
+            self.audio_duration = librosa.get_duration(y=y, sr=sr)
+            
+            # Update UI elements
+            self.root.after(0, lambda: self.total_time_var.set(self.format_time(self.audio_duration)))
+            self.root.after(0, lambda: self.current_time_var.set("0:00"))
+            
+            # Extract audio features for lip sync
+            # In a real app, you would use a phoneme detection model
+            # For this demo, we'll simulate phoneme detection using amplitude
+            
+            # Get amplitude envelope
+            hop_length = 512
+            amplitude_envelope = np.array([
+                np.max(abs(y[i:i+hop_length])) 
+                for i in range(0, len(y), hop_length)
+            ])
+            
+            # Convert to "mouth openness" values
+            mouth_values = []
+            for amp in amplitude_envelope:
+                # Scale amplitude to mouth openness (0-30 pixels)
+                mouth_openness = min(30, int(amp * 100))
+                mouth_values.append(mouth_openness)
+            
+            # Store phoneme data
+            self.phonemes = mouth_values
+            
+            # Update UI on the main thread
+            self.root.after(0, lambda: self.status_bar.config(text="Lip sync data generated successfully"))
+            self.root.after(0, self.update_waveform_display)
+            
+            # Auto play after processing is complete
+            self.root.after(500, self.start_playback)
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.status_bar.config(text=f"Error generating lip sync: {e}"))
+            
+    def toggle_playback(self, event=None):
+        """Toggle between play and pause"""
+        if not self.audio_file:
+            self.status_bar.config(text="Please load an audio file first")
+            return
+            
+        if not self.is_playing:
+            self.start_playback()
+        else:
+            self.stop_playback()
+    
+    def start_playback(self):
+        """Start avatar animation and audio playback"""
+        if not self.audio_file or not self.phonemes:
+            return
+            
+        # Start playback
+        self.is_playing = True
+        
+        # Update play button to show pause symbol
+        self.play_canvas.delete("all")
+        self.play_circle = self.play_canvas.create_oval(5, 5, 45, 45, fill=self.pause_bg_color, outline="")
+        
+        # Draw pause symbol (two rectangles)
+        self.play_canvas.create_rectangle(17, 15, 23, 35, fill="white", outline="")
+        self.play_canvas.create_rectangle(27, 15, 33, 35, fill="white", outline="")
+        
+        # Start animation and audio playback thread
+        threading.Thread(target=self.animate_avatar).start()
+    
+    def stop_playback(self):
+        """Stop avatar animation and audio playback"""
+        # Stop playback
+        self.is_playing = False
+        
+        # Update pause button to show play symbol
+        self.play_canvas.delete("all")
+        self.play_circle = self.play_canvas.create_oval(5, 5, 45, 45, fill=self.play_bg_color, outline="")
+        self.play_symbol = self.play_canvas.create_polygon(20, 15, 20, 35, 35, 25, fill="white")
+        
+        # Stop audio
+        sd.stop()
+            
+    def animate_avatar(self):
+        """Animate the avatar based on phoneme data and play audio"""
+        try:
+            # Get current position in the audio file
+            start_time = 0
+            if self.current_playback_time > 0:
+                start_time = self.current_playback_time
+                
+            # Load audio data
+            data, fs = sf.read(self.audio_file, dtype='float32')
+            
+            # Calculate starting sample
+            start_sample = int(start_time * fs)
+            
+            # Play audio from the current position
+            if start_sample < len(data):
+                sd.play(data[start_sample:], fs)
+            
+            # Frame timing and starting position
+            frame_duration = 0.512  # seconds (based on hop_length/sr)
+            
+            # Set starting frame based on current playback time
+            if self.current_playback_time > 0 and self.audio_duration > 0:
+                self.current_frame = min(len(self.phonemes) - 1, 
+                                      int((self.current_playback_time / self.audio_duration) * len(self.phonemes)))
             else:
-                # Pauses
-                phonemes.append(('rest', 0.1))
-        return phonemes
-
-class Model3D:
-    def __init__(self):
-        # Initialize the 3D rendering components
-        self.scene = pyrender.Scene(ambient_light=[0.5, 0.5, 0.5])
-        
-        # In a real application, you would load your 3D model here
-        # For demonstration, we'll create a simple face mesh
-        self.mesh = self.create_face_mesh()
-        self.mesh_node = pyrender.Node(mesh=self.mesh, matrix=np.eye(4))
-        self.scene.add_node(self.mesh_node)
-        
-        # Setup camera
-        self.camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0, aspectRatio=1.0)
-        self.camera_pose = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.5],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        self.scene.add(self.camera, pose=self.camera_pose)
-        
-        # Setup light
-        light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=2.0)
-        self.scene.add(light, pose=self.camera_pose)
-        
-        # Blendshapes for facial animation
-        self.blendshapes = {
-            'rest': np.zeros(self.mesh.primitives[0].positions.shape),
-            'smile': self.create_blend_shape('smile'),
-            'ah': self.create_blend_shape('ah'),
-            'oh': self.create_blend_shape('oh'),
-            'ee': self.create_blend_shape('ee'),
-            'f': self.create_blend_shape('f'),
-            'm': self.create_blend_shape('m'),
-            'l': self.create_blend_shape('l')
-        }
-        
-        # Current blendshape weights
-        self.current_weights = {shape: 0.0 for shape in self.blendshapes}
-        self.current_weights['rest'] = 1.0
-        
-        # Renderer for offscreen rendering
-        self.renderer = pyrender.OffscreenRenderer(400, 600)
-    
-    def create_face_mesh(self):
-        # In a real application, you would load a 3D model from a file
-        # For demonstration, we'll create a simple face mesh
-        # This is highly simplified - in a real app, you'd use an actual 3D model file
-        
-        try:
-            # Try to load an actual model if available
-            mesh = trimesh.load(female_head)
-            return pyrender.Mesh.from_trimesh(mesh)
-        except:
-            # Fallback to a simple primitive
-            box = trimesh.creation.box()
-            mesh = pyrender.Mesh.from_trimesh(box)
-            return mesh
-    
-    def create_blend_shape(self, shape_type):
-        # In a real application, these would be loaded from a file with proper facial blendshapes
-        # This is just for demonstration
-        base_positions = self.mesh.primitives[0].positions.copy()
-        
-        # Simple vertex modifications based on shape type
-        if shape_type == 'smile':
-            # Move some vertices to form a smile
-            pass
-        elif shape_type == 'ah':
-            # Open mouth for 'ah' sound
-            pass
-        elif shape_type == 'oh':
-            # Round mouth for 'oh' sound
-            pass
-        
-        # Return the displacement from base positions
-        return base_positions
-    
-    def update_for_phoneme(self, phoneme):
-        # Reset weights
-        for shape in self.current_weights:
-            self.current_weights[shape] = 0.0
-        
-        # Set appropriate blendshape weights based on phoneme
-        if phoneme in ['a', 'ah', 'ae']:
-            self.current_weights['ah'] = 1.0
-        elif phoneme in ['o', 'oh', 'ow']:
-            self.current_weights['oh'] = 1.0
-        elif phoneme in ['e', 'ee']:
-            self.current_weights['ee'] = 1.0
-        elif phoneme in ['f', 'v']:
-            self.current_weights['f'] = 1.0
-        elif phoneme in ['m', 'b', 'p']:
-            self.current_weights['m'] = 1.0
-        elif phoneme in ['l']:
-            self.current_weights['l'] = 1.0
-        else:
-            self.current_weights['rest'] = 1.0
-        
-        # Apply blendshape weights
-        self.apply_blendshapes()
-    
-    def apply_blendshapes(self):
-        # Calculate vertex positions based on blendshape weights
-        final_positions = np.zeros_like(self.mesh.primitives[0].positions)
-        
-        for shape, weight in self.current_weights.items():
-            final_positions += self.blendshapes[shape] * weight
-        
-        # Update mesh vertices
-        self.mesh.primitives[0].positions = final_positions
-        
-        # Update mesh in scene
-        self.scene.remove_node(self.mesh_node)
-        self.mesh_node = pyrender.Node(mesh=self.mesh, matrix=np.eye(4))
-        self.scene.add_node(self.mesh_node)
-    
-    def render(self):
-        # Render the scene
-        color, depth = self.renderer.render(self.scene)
-        return color
-
-class AvatarOpenGLWidget(QOpenGLWidget):
-    def __init__(self, parent=None):
-        super(AvatarOpenGLWidget, self).__init__(parent)
-        self.model = None
-        self.texture = None
-        
-    def initializeGL(self):
-        glClearColor(0.0, 0.0, 0.0, 1.0)
-        glEnable(GL_DEPTH_TEST)
-        
-        # Initialize model
-        self.init_model()
-        
-    def init_model(self):
-        try:
-            # Try to load the model
-            self.model = Wavefront(female_head)
-        except:
-            # Handle case where model can't be loaded
-            print("Could not load 3D model. Using fallback.")
-        
-    def resizeGL(self, width, height):
-        glViewport(0, 0, width, height)
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45, width / height, 0.1, 100.0)
-        
-    def paintGL(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        
-        # Position the model
-        glTranslatef(0.0, 0.0, -5.0)
-        
-        # Rotate model to face camera
-        glRotatef(180, 0, 0, 1)
-        
-        # Draw the model if available
-        if self.model:
-            self.draw_model()
-        else:
-            self.draw_fallback()
-    
-    def draw_model(self):
-        # Draw the actual 3D model
-        # This is simplified - in a real app, you'd use shaders and proper rendering
-        for mesh in self.model.meshes:
-            glBegin(GL_TRIANGLES)
-            for face in mesh.faces:
-                for vertex_i in face:
-                    vertex = mesh.vertices[vertex_i]
-                    glVertex3f(vertex[0], vertex[1], vertex[2])
-            glEnd()
-    
-    def draw_fallback(self):
-        # Draw a simple cube as fallback
-        glBegin(GL_QUADS)
-        # Front face
-        glVertex3f(-0.5, -0.5, 0.5)
-        glVertex3f(0.5, -0.5, 0.5)
-        glVertex3f(0.5, 0.5, 0.5)
-        glVertex3f(-0.5, 0.5, 0.5)
-        # And other faces...
-        glEnd()
-        
-    def update_face_for_phoneme(self, phoneme):
-        # Update facial expression based on phoneme
-        # This would modify the vertices or blend shapes of the model
-        # Example implementation depends on your model format
-        self.update()
-
-class AvatarApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("3D Avatar Assistant")
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)  # Make window stay on top
-        
-        # Create main widget and layout
-        main_widget = QWidget()
-        main_layout = QVBoxLayout()
-        
-        # Avatar display area - now using OpenGL for 3D rendering
-        self.avatar_view = AvatarOpenGLWidget()
-        self.avatar_view.setMinimumSize(400, 600)
-        main_layout.addWidget(self.avatar_view)
-        
-        # Text input area
-        input_layout = QHBoxLayout()
-        self.text_input = QTextEdit()
-        self.text_input.setPlaceholderText("Type your message here...")
-        self.text_input.setMaximumHeight(100)
-        input_layout.addWidget(self.text_input)
-        
-        # Speak button
-        self.speak_button = QPushButton("Speak")
-        self.speak_button.clicked.connect(self.process_speech)
-        input_layout.addWidget(self.speak_button)
-        
-        main_layout.addLayout(input_layout)
-        main_widget.setLayout(main_layout)
-        self.setCentralWidget(main_widget)
-        
-        # Initialize 3D model
-        self.model_3d = Model3D()
-        
-        # Voice generator setup
-        self.voice_thread = QThread()
-        self.voice_generator = VoiceGenerator()
-        self.voice_generator.moveToThread(self.voice_thread)
-        self.voice_generator.finished.connect(self.speech_finished)
-        self.voice_generator.phoneme_signal.connect(self.on_phoneme)
-        self.voice_thread.start()
-        
-        self.is_speaking = False
-        
-    def process_speech(self):
-        if self.is_speaking:
-            return
+                self.current_frame = 0
+                
+            total_frames = len(self.phonemes)
+            start_time = time.time() - start_time
             
-        text = self.text_input.toPlainText().strip()
-        if not text:
-            return
-            
-        self.is_speaking = True
-        self.speak_button.setEnabled(False)
-        
-        # Start speech in another thread
-        threading.Thread(target=self.voice_generator.speak_text, args=(text,)).start()
+            # Animate mouth with the audio
+            while self.is_playing and self.current_frame < total_frames:
+                # Calculate current playback time
+                self.current_playback_time = min(self.audio_duration, time.time() - start_time)
+                
+                # Update UI elements
+                self.root.after(0, lambda t=self.current_playback_time: 
+                              self.current_time_var.set(self.format_time(t)))
+                
+                # Update mouth shape based on current phoneme
+                mouth_openness = self.phonemes[self.current_frame]
+                
+                # Update on main thread
+                self.root.after(0, lambda o=mouth_openness: self.update_model_animation(o))
+                
+                # Update waveform (less frequently to avoid UI lag)
+                if self.current_frame % 5 == 0:
+                    self.root.after(0, self.update_waveform_display)
+                
+                # Wait for next frame
+                time.sleep(frame_duration)
+                self.current_frame += 1
+                
+            # Reset when done
+            if self.current_frame >= total_frames:
+                self.is_playing = False
+                self.current_playback_time = 0
+                self.root.after(0, lambda: self.current_time_var.set("0:00"))
+                self.root.after(0, self.stop_playback)
+                self.root.after(0, lambda: self.update_model_animation(0))
+                self.root.after(0, self.update_waveform_display)
+                
+            # Stop audio
+            sd.stop()
+                
+        except Exception as e:
+            self.root.after(0, lambda: self.status_bar.config(text=f"Error during playback: {e}"))
+            self.is_playing = False
+            self.root.after(0, self.stop_playback)
     
-    def on_phoneme(self, phoneme, duration):
-        # Update 3D model animation based on phoneme
-        self.avatar_view.update_face_for_phoneme(phoneme)
-        
-    def speech_finished(self, message):
-        self.is_speaking = False
-        self.speak_button.setEnabled(True)
-        # Reset to rest position
-        self.avatar_view.update_face_for_phoneme("rest")
-    
-    def closeEvent(self, event):
-        self.voice_thread.quit()
-        self.voice_thread.wait()
-        super().closeEvent(event)
+    def on_closing(self):
+        """Clean up resources before closing"""
+        if hasattr(self, 'gl_window') and self.gl_window:
+            glfw.destroy_window(self.gl_window)
+        glfw.terminate()
+        self.root.destroy()
 
-def main():
-    app = QApplication(sys.argv)
-    window = AvatarApp()
-    window.resize(400, 700)
-    window.show()
-    sys.exit(app.exec_())
-
+# Main application
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = AvatarLipSyncApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    root.mainloop()
