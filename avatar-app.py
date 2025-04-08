@@ -3,16 +3,27 @@ import os
 import threading
 import time
 import numpy as np
-import pygame
 import pyttsx3
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QTextEdit, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QPushButton, QTextEdit, QHBoxLayout, QOpenGLWidget
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject, QThread
-from PyQt5.QtGui import QPixmap, QPainter, QImage
+from PyQt5.QtGui import QPixmap, QPainter
 import cv2
-from PIL import Image, ImageQt
+import trimesh
+import pyrender
+import speech_recognition as sr
+
+# For blendshape animations
+from scipy.spatial.transform import Rotation as R
+import glfw
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from pywavefront import Wavefront
+
+female_head = os.path.join(os.path.join(os.getcwd(), "ressources"), "female_red_head.obj")
 
 class VoiceGenerator(QObject):
     finished = pyqtSignal(str)
+    phoneme_signal = pyqtSignal(str, float)  # Phoneme and its duration
     
     def __init__(self):
         super().__init__()
@@ -40,87 +51,270 @@ class VoiceGenerator(QObject):
         self.engine.setProperty('rate', 150)  # Speed of speech
         self.engine.setProperty('volume', 0.9)  # Volume (0.0 to 1.0)
         
+        # Set up callback for word and phoneme events
+        self.engine.connect('started-word', self.on_word)
+        
+        # Phoneme mapping for lip sync
+        self.phoneme_map = {
+            'AA': 'ah', 'AE': 'ae', 'AH': 'ah', 'AO': 'oh',
+            'AW': 'aw', 'AY': 'ay', 'B': 'b', 'CH': 'ch',
+            'D': 'd', 'DH': 'th', 'EH': 'eh', 'ER': 'er',
+            'EY': 'ey', 'F': 'f', 'G': 'g', 'HH': 'h',
+            'IH': 'ih', 'IY': 'ee', 'JH': 'j', 'K': 'k',
+            'L': 'l', 'M': 'm', 'N': 'n', 'NG': 'ng',
+            'OW': 'oh', 'OY': 'oy', 'P': 'p', 'R': 'r',
+            'S': 's', 'SH': 'sh', 'T': 't', 'TH': 'th',
+            'UH': 'uh', 'UW': 'oo', 'V': 'v', 'W': 'w',
+            'Y': 'y', 'Z': 'z', 'ZH': 'zh'
+        }
+    
+    def on_word(self, name, location, length):
+        # This would be called when a word starts
+        # In a production app, you'd use more sophisticated phoneme extraction
+        pass
+        
     def speak_text(self, text):
+        # For better phoneme extraction in a real app, you would:
+        # 1. Use a dedicated phoneme extractor library
+        # 2. Or use a TTS service that provides phoneme timing data
+        
+        # Simple simulation of phoneme extraction for demonstration
+        phonemes = self.simple_phoneme_extraction(text)
+        
+        # Emit phonemes with timing for lip sync
+        for phoneme, duration in phonemes:
+            self.phoneme_signal.emit(phoneme, duration)
+            time.sleep(duration)  # Simulate the timing
+        
+        # Actually speak the text
         self.engine.say(text)
         self.engine.runAndWait()
         self.finished.emit("Speech completed")
+    
+    def simple_phoneme_extraction(self, text):
+        # Very simplified phoneme extraction
+        # In a real application, use a dedicated library like CMU Sphinx
+        phonemes = []
+        for char in text:
+            if char.lower() in 'aeiou':
+                # Vowels - longer duration
+                phonemes.append((char.lower(), 0.15))
+            elif char.isalpha():
+                # Consonants - shorter duration
+                phonemes.append((char.lower(), 0.08))
+            else:
+                # Pauses
+                phonemes.append(('rest', 0.1))
+        return phonemes
 
-class LipSyncAnimator:
+class Model3D:
     def __init__(self):
-        # Load the avatar base image
-        self.base_image = cv2.imread("avatar_base.jpg")
-        if self.base_image is None:
-            # Create a placeholder image if no avatar is available
-            self.base_image = np.ones((600, 400, 3), dtype=np.uint8) * 255
-            cv2.putText(self.base_image, "Avatar", (150, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        # Initialize the 3D rendering components
+        self.scene = pyrender.Scene(ambient_light=[0.5, 0.5, 0.5])
         
-        # Create different mouth shapes for lip sync
-        self.mouth_shapes = {
-            "rest": self.base_image.copy(),
-            "slight_open": self.create_mouth_shape("slight"),
-            "medium_open": self.create_mouth_shape("medium"),
-            "wide_open": self.create_mouth_shape("wide")
+        # In a real application, you would load your 3D model here
+        # For demonstration, we'll create a simple face mesh
+        self.mesh = self.create_face_mesh()
+        self.mesh_node = pyrender.Node(mesh=self.mesh, matrix=np.eye(4))
+        self.scene.add_node(self.mesh_node)
+        
+        # Setup camera
+        self.camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0, aspectRatio=1.0)
+        self.camera_pose = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.5],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        self.scene.add(self.camera, pose=self.camera_pose)
+        
+        # Setup light
+        light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=2.0)
+        self.scene.add(light, pose=self.camera_pose)
+        
+        # Blendshapes for facial animation
+        self.blendshapes = {
+            'rest': np.zeros(self.mesh.primitives[0].positions.shape),
+            'smile': self.create_blend_shape('smile'),
+            'ah': self.create_blend_shape('ah'),
+            'oh': self.create_blend_shape('oh'),
+            'ee': self.create_blend_shape('ee'),
+            'f': self.create_blend_shape('f'),
+            'm': self.create_blend_shape('m'),
+            'l': self.create_blend_shape('l')
         }
         
-        self.current_frame = self.mouth_shapes["rest"]
+        # Current blendshape weights
+        self.current_weights = {shape: 0.0 for shape in self.blendshapes}
+        self.current_weights['rest'] = 1.0
         
-    def create_mouth_shape(self, shape_type):
-        # This is a simplified version. In a real implementation,
-        # you would have actual mouth shape images or modify the base image
-        # to change the mouth shape according to phonemes
-        img = self.base_image.copy()
-        
-        # Here, we're just putting text to show different states
-        # In a real app, you would modify the mouth region of the avatar
-        y_pos = 400
-        if shape_type == "slight":
-            cv2.putText(img, "•", (200, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        elif shape_type == "medium":
-            cv2.putText(img, "o", (200, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        elif shape_type == "wide":
-            cv2.putText(img, "O", (200, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        
-        return img
+        # Renderer for offscreen rendering
+        self.renderer = pyrender.OffscreenRenderer(400, 600)
     
-    def get_frame_for_phoneme(self, phoneme):
-        # Map phonemes to mouth shapes
-        # This is a simplified version. A real implementation would
-        # map different phonemes to appropriate mouth shapes
-        vowels = ['a', 'e', 'i', 'o', 'u']
-        plosives = ['p', 'b', 'm']
+    def create_face_mesh(self):
+        # In a real application, you would load a 3D model from a file
+        # For demonstration, we'll create a simple face mesh
+        # This is highly simplified - in a real app, you'd use an actual 3D model file
         
-        if phoneme.lower() in vowels:
-            return self.mouth_shapes["medium_open"]
-        elif phoneme.lower() in plosives:
-            return self.mouth_shapes["wide_open"]
+        try:
+            # Try to load an actual model if available
+            mesh = trimesh.load(female_head)
+            return pyrender.Mesh.from_trimesh(mesh)
+        except:
+            # Fallback to a simple primitive
+            box = trimesh.creation.box()
+            mesh = pyrender.Mesh.from_trimesh(box)
+            return mesh
+    
+    def create_blend_shape(self, shape_type):
+        # In a real application, these would be loaded from a file with proper facial blendshapes
+        # This is just for demonstration
+        base_positions = self.mesh.primitives[0].positions.copy()
+        
+        # Simple vertex modifications based on shape type
+        if shape_type == 'smile':
+            # Move some vertices to form a smile
+            pass
+        elif shape_type == 'ah':
+            # Open mouth for 'ah' sound
+            pass
+        elif shape_type == 'oh':
+            # Round mouth for 'oh' sound
+            pass
+        
+        # Return the displacement from base positions
+        return base_positions
+    
+    def update_for_phoneme(self, phoneme):
+        # Reset weights
+        for shape in self.current_weights:
+            self.current_weights[shape] = 0.0
+        
+        # Set appropriate blendshape weights based on phoneme
+        if phoneme in ['a', 'ah', 'ae']:
+            self.current_weights['ah'] = 1.0
+        elif phoneme in ['o', 'oh', 'ow']:
+            self.current_weights['oh'] = 1.0
+        elif phoneme in ['e', 'ee']:
+            self.current_weights['ee'] = 1.0
+        elif phoneme in ['f', 'v']:
+            self.current_weights['f'] = 1.0
+        elif phoneme in ['m', 'b', 'p']:
+            self.current_weights['m'] = 1.0
+        elif phoneme in ['l']:
+            self.current_weights['l'] = 1.0
         else:
-            return self.mouth_shapes["slight_open"]
+            self.current_weights['rest'] = 1.0
+        
+        # Apply blendshape weights
+        self.apply_blendshapes()
     
-    def animate_speech(self, text):
-        # Simple animation: cycle through mouth positions based on text
-        frames = []
-        for char in text:
-            if char.isalpha():
-                frames.append(self.get_frame_for_phoneme(char))
-            else:
-                frames.append(self.mouth_shapes["rest"])
-                
-        return frames
+    def apply_blendshapes(self):
+        # Calculate vertex positions based on blendshape weights
+        final_positions = np.zeros_like(self.mesh.primitives[0].positions)
+        
+        for shape, weight in self.current_weights.items():
+            final_positions += self.blendshapes[shape] * weight
+        
+        # Update mesh vertices
+        self.mesh.primitives[0].positions = final_positions
+        
+        # Update mesh in scene
+        self.scene.remove_node(self.mesh_node)
+        self.mesh_node = pyrender.Node(mesh=self.mesh, matrix=np.eye(4))
+        self.scene.add_node(self.mesh_node)
+    
+    def render(self):
+        # Render the scene
+        color, depth = self.renderer.render(self.scene)
+        return color
+
+class AvatarOpenGLWidget(QOpenGLWidget):
+    def __init__(self, parent=None):
+        super(AvatarOpenGLWidget, self).__init__(parent)
+        self.model = None
+        self.texture = None
+        
+    def initializeGL(self):
+        glClearColor(0.0, 0.0, 0.0, 1.0)
+        glEnable(GL_DEPTH_TEST)
+        
+        # Initialize model
+        self.init_model()
+        
+    def init_model(self):
+        try:
+            # Try to load the model
+            self.model = Wavefront(female_head)
+        except:
+            # Handle case where model can't be loaded
+            print("Could not load 3D model. Using fallback.")
+        
+    def resizeGL(self, width, height):
+        glViewport(0, 0, width, height)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45, width / height, 0.1, 100.0)
+        
+    def paintGL(self):
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        
+        # Position the model
+        glTranslatef(0.0, 0.0, -5.0)
+        
+        # Rotate model to face camera
+        glRotatef(180, 0, 0, 1)
+        
+        # Draw the model if available
+        if self.model:
+            self.draw_model()
+        else:
+            self.draw_fallback()
+    
+    def draw_model(self):
+        # Draw the actual 3D model
+        # This is simplified - in a real app, you'd use shaders and proper rendering
+        for mesh in self.model.meshes:
+            glBegin(GL_TRIANGLES)
+            for face in mesh.faces:
+                for vertex_i in face:
+                    vertex = mesh.vertices[vertex_i]
+                    glVertex3f(vertex[0], vertex[1], vertex[2])
+            glEnd()
+    
+    def draw_fallback(self):
+        # Draw a simple cube as fallback
+        glBegin(GL_QUADS)
+        # Front face
+        glVertex3f(-0.5, -0.5, 0.5)
+        glVertex3f(0.5, -0.5, 0.5)
+        glVertex3f(0.5, 0.5, 0.5)
+        glVertex3f(-0.5, 0.5, 0.5)
+        # And other faces...
+        glEnd()
+        
+    def update_face_for_phoneme(self, phoneme):
+        # Update facial expression based on phoneme
+        # This would modify the vertices or blend shapes of the model
+        # Example implementation depends on your model format
+        self.update()
 
 class AvatarApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Avatar Assistant")
+        self.setWindowTitle("3D Avatar Assistant")
         self.setWindowFlags(Qt.WindowStaysOnTopHint)  # Make window stay on top
         
         # Create main widget and layout
         main_widget = QWidget()
         main_layout = QVBoxLayout()
         
-        # Avatar display area
-        self.avatar_label = QLabel()
-        self.avatar_label.setMinimumSize(400, 600)
-        main_layout.addWidget(self.avatar_label)
+        # Avatar display area - now using OpenGL for 3D rendering
+        self.avatar_view = AvatarOpenGLWidget()
+        self.avatar_view.setMinimumSize(400, 600)
+        main_layout.addWidget(self.avatar_view)
         
         # Text input area
         input_layout = QHBoxLayout()
@@ -138,31 +332,18 @@ class AvatarApp(QMainWindow):
         main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
         
-        # Initialize lip sync animator
-        self.lip_sync = LipSyncAnimator()
-        self.avatar_label.setPixmap(self.convert_cv_to_pixmap(self.lip_sync.current_frame))
+        # Initialize 3D model
+        self.model_3d = Model3D()
         
         # Voice generator setup
         self.voice_thread = QThread()
         self.voice_generator = VoiceGenerator()
         self.voice_generator.moveToThread(self.voice_thread)
         self.voice_generator.finished.connect(self.speech_finished)
+        self.voice_generator.phoneme_signal.connect(self.on_phoneme)
         self.voice_thread.start()
         
-        # Animation timer
-        self.animation_frames = []
-        self.current_frame_idx = 0
-        self.animation_timer = QTimer()
-        self.animation_timer.timeout.connect(self.update_animation)
-        
         self.is_speaking = False
-        
-    def convert_cv_to_pixmap(self, cv_img):
-        # Convert OpenCV image to QPixmap for display
-        height, width, channel = cv_img.shape
-        bytes_per_line = 3 * width
-        q_img = QImage(cv_img.data, width, height, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
-        return QPixmap.fromImage(q_img)
         
     def process_speech(self):
         if self.is_speaking:
@@ -175,34 +356,18 @@ class AvatarApp(QMainWindow):
         self.is_speaking = True
         self.speak_button.setEnabled(False)
         
-        # Generate animation frames for the text
-        self.animation_frames = self.lip_sync.animate_speech(text)
-        self.current_frame_idx = 0
-        
-        # Start animation
-        self.animation_timer.start(100)  # Update every 100ms
-        
         # Start speech in another thread
         threading.Thread(target=self.voice_generator.speak_text, args=(text,)).start()
     
-    def update_animation(self):
-        if not self.animation_frames or self.current_frame_idx >= len(self.animation_frames):
-            self.animation_timer.stop()
-            # Return to rest pose
-            self.avatar_label.setPixmap(self.convert_cv_to_pixmap(self.lip_sync.mouth_shapes["rest"]))
-            return
-            
-        # Update avatar with current frame
-        frame = self.animation_frames[self.current_frame_idx]
-        self.avatar_label.setPixmap(self.convert_cv_to_pixmap(frame))
-        self.current_frame_idx += 1
-    
+    def on_phoneme(self, phoneme, duration):
+        # Update 3D model animation based on phoneme
+        self.avatar_view.update_face_for_phoneme(phoneme)
+        
     def speech_finished(self, message):
         self.is_speaking = False
         self.speak_button.setEnabled(True)
-        self.animation_timer.stop()
         # Reset to rest position
-        self.avatar_label.setPixmap(self.convert_cv_to_pixmap(self.lip_sync.mouth_shapes["rest"]))
+        self.avatar_view.update_face_for_phoneme("rest")
     
     def closeEvent(self, event):
         self.voice_thread.quit()
