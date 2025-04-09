@@ -47,53 +47,60 @@ class PlaybackControls(ttk.Frame):
         super().__init__(parent, **kwargs)
         
         self.media_manager = media_manager
-        self.canvas_height = 60
+        self.theme = parent.winfo_toplevel().theme
+        self.canvas_height = int(parent.winfo_screenheight() * 0.08)  # 8% of screen height
         self.waveform_data = None
         self.is_playing = False
         
+        # Create widgets
         self._create_widgets()
         self._setup_bindings()
         
         # Subscribe to media manager events
         self.media_manager.on("audio_loaded", self._on_audio_loaded)
         self.media_manager.on("playback_update", self._on_playback_update)
-        
+    
     def _create_widgets(self):
         """Create and layout the playback control widgets"""
         # Main container
-        self.controls_frame = ttk.Frame(self)
+        self.controls_frame = ttk.Frame(self, style='Playback.TFrame')
         self.controls_frame.pack(fill=tk.BOTH, expand=True)
         
         # Waveform canvas
         self.canvas = tk.Canvas(
             self.controls_frame,
             height=self.canvas_height,
-            bg="#2A2A2A",
-            highlightthickness=0
+            bg=self.theme.get_color('background'),
+            highlightthickness=1,
+            highlightbackground=self.theme.get_color('border')
         )
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=5)
         
         # Progress indicator
         self.progress_line = self.canvas.create_line(
             0, 0, 0, self.canvas_height,
-            fill="#4CAF50",
+            fill=self.theme.get_color('progress'),
             width=2,
             state=tk.HIDDEN
         )
         
+        # Control bar frame
+        self.control_bar = ttk.Frame(self.controls_frame, style='Playback.TFrame')
+        self.control_bar.pack(fill=tk.X, padx=5, pady=5)
+        
         # Play/Pause button
         self.play_button = ttk.Button(
-            self.controls_frame,
+            self.control_bar,
             text="▶",
             width=3,
             command=self._toggle_playback,
             style="PlayPause.TButton"
         )
-        self.play_button.pack(side=tk.LEFT, padx=5, pady=5)
+        self.play_button.pack(side=tk.LEFT)
         
         # Time labels
-        self.time_frame = ttk.Frame(self.controls_frame)
-        self.time_frame.pack(side=tk.RIGHT, padx=5, pady=5)
+        self.time_frame = ttk.Frame(self.control_bar, style='Playback.TFrame')
+        self.time_frame.pack(side=tk.RIGHT)
         
         self.current_time = ttk.Label(
             self.time_frame,
@@ -114,59 +121,34 @@ class PlaybackControls(ttk.Frame):
             style="Time.TLabel"
         )
         self.total_time.pack(side=tk.LEFT)
-        
-        self._setup_styles()
-        
-    def _setup_styles(self):
-        """Configure custom styles for the widgets"""
-        style = ttk.Style()
-        
-        # Play/Pause button style
-        style.configure(
-            "PlayPause.TButton",
-            background="#2A2A2A",
-            foreground="#FFFFFF",
-            padding=5,
-            font=("Arial", 12, "bold")
-        )
-        
-        # Time label style
-        style.configure(
-            "Time.TLabel",
-            background="#2A2A2A",
-            foreground="#FFFFFF",
-            font=("Arial", 10)
-        )
-        
+    
     def _setup_bindings(self):
         """Set up event bindings"""
         self.canvas.bind("<Button-1>", self._on_canvas_click)
         self.canvas.bind("<Configure>", self._on_canvas_resize)
-        
+    
     def _on_audio_loaded(self, filename, audio_data):
         """Handle audio loaded event"""
         self.waveform_data = audio_data
         self._draw_waveform()
         duration = self.media_manager.get_playback_info()["duration"]
         self.total_time.configure(text=self._format_time(duration))
-        
+    
     def _on_playback_update(self, position, duration):
         """Handle playback update event"""
-        # Update progress line
         if self.waveform_data is not None:
             canvas_width = self.canvas.winfo_width()
             x_pos = (position / duration) * canvas_width
             self.canvas.coords(self.progress_line, x_pos, 0, x_pos, self.canvas_height)
             self.canvas.itemconfigure(self.progress_line, state=tk.NORMAL)
         
-        # Update time label
         self.current_time.configure(text=self._format_time(position))
-        
+    
     def _draw_waveform(self):
         """Draw the audio waveform on the canvas"""
         if self.waveform_data is None:
             return
-            
+        
         self.canvas.delete("waveform")
         
         canvas_width = self.canvas.winfo_width()
@@ -177,7 +159,7 @@ class PlaybackControls(ttk.Frame):
         num_points = min(len(self.waveform_data), canvas_width)
         if num_points < 2:
             return
-            
+        
         # Resample the waveform data
         indices = np.linspace(0, len(self.waveform_data) - 1, num_points)
         resampled_data = np.interp(indices, np.arange(len(self.waveform_data)), self.waveform_data)
@@ -188,49 +170,44 @@ class PlaybackControls(ttk.Frame):
         # Draw the waveform
         for i in range(num_points - 1):
             x1 = i
-            y1 = center_y + scaled_data[i]
             x2 = i + 1
-            y2 = center_y + scaled_data[i + 1]
             
             # Draw mirrored waveform
             self.canvas.create_line(
                 x1, center_y + scaled_data[i],
                 x2, center_y + scaled_data[i + 1],
-                fill="#4CAF50",
+                fill=self.theme.get_color('waveform'),
                 width=1,
                 tags="waveform"
             )
             self.canvas.create_line(
                 x1, center_y - scaled_data[i],
                 x2, center_y - scaled_data[i + 1],
-                fill="#4CAF50",
+                fill=self.theme.get_color('waveform'),
                 width=1,
                 tags="waveform"
             )
-            
+    
     def _on_canvas_resize(self, event):
         """Handle canvas resize event"""
         self._draw_waveform()
-        
+    
     def _on_canvas_click(self, event):
         """Handle canvas click event"""
         if self.waveform_data is not None:
-            # Calculate the position as a percentage of the total width
             canvas_width = self.canvas.winfo_width()
             click_position = event.x / canvas_width
             
-            # Get the duration and calculate the seek position
             duration = self.media_manager.get_playback_info()["duration"]
             seek_position = click_position * duration
             
-            # Seek to the new position
             self.media_manager.seek_to(seek_position)
-            
+    
     def _toggle_playback(self):
         """Toggle audio playback"""
         is_playing = self.media_manager.toggle_playback()
         self.play_button.configure(text="⏸" if is_playing else "▶")
-        
+    
     def _format_time(self, seconds):
         """Format time in seconds to MM:SS format"""
         minutes = int(seconds // 60)

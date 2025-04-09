@@ -4,11 +4,16 @@ import os
 from .window.window_manager import WindowManager
 from .media.media_manager import MediaManager
 from .ui import AvatarZone, AudioDropZone, PlaybackControls
+from .ui.styles.theme import Theme
 
 class AppWindow:
     def __init__(self):
         # Initialize root window with drag and drop support
         self.root = TkinterDnD.Tk()
+        
+        # Initialize theme
+        self.theme = Theme()
+        self.theme.apply_theme(self.root)
         
         # Initialize managers
         self.window_manager = WindowManager(self.root)
