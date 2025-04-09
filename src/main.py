@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from tkinterdnd2 import TkinterDnD
 from PIL import ImageTk, Image, ImageDraw
+import pygame
+import atexit
 
 from ui.modern_button import ModernButton
 from ui.audio_dropzone import AudioDropZone
@@ -37,8 +39,8 @@ class AvatarLipSyncApp:
         self.container = ttk.Frame(self.root, padding="20")
         self.container.pack(fill=tk.BOTH, expand=True)
         
-        # Create avatar zone with specific dimensions
-        self.avatar_zone = AvatarZone(self.container, width=600, height=400)
+        # Create avatar zone with reduced dimensions
+        self.avatar_zone = AvatarZone(self.container, width=300, height=400)  # Reduced from 600x400
         
         # Create the control panel below the avatar
         self.control_frame = ttk.Frame(self.container)
@@ -67,6 +69,10 @@ class AvatarLipSyncApp:
         # Bind events
         self.root.bind("<Configure>", self.on_window_resize)
         self.root.after(100, self.on_window_loaded)  # Wait for window to be fully loaded
+        
+        # Register cleanup function
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        atexit.register(self.cleanup_resources)
     
     def set_app_icon(self):
         """Set a custom icon for the application that works across platforms"""
@@ -154,8 +160,8 @@ class AvatarLipSyncApp:
         self.last_height = event.height
         
         # Calculate new avatar dimensions based on window size
-        new_width = min(event.width - 40, 600)  # Max width of 600, with 20px padding on each side
-        new_height = min(event.height - 200, 400)  # Leave space for controls and status bar
+        new_width = min(event.width - 40, 450)  # Max width of 450, with 20px padding on each side
+        new_height = min(event.height - 200, 350)  # Leave space for controls and status bar
         
         # Update avatar zone size
         self.avatar_zone.resize(new_width, new_height)
@@ -339,6 +345,41 @@ class AvatarLipSyncApp:
             current_time,
             self.audio_processor.audio_duration
         )
+    
+    def on_closing(self):
+        """Handle window closing event"""
+        # Clean up resources
+        self.cleanup_resources()
+        # Destroy the window
+        self.root.destroy()
+    
+    def cleanup_resources(self):
+        """Clean up all resources before exiting"""
+        try:
+            # Stop audio playback
+            if hasattr(self, 'audio_processor'):
+                self.audio_processor.stop_playback()
+            
+            # Stop lip sync processing
+            if hasattr(self, 'lipsync_processor'):
+                self.lipsync_processor.stop_processing()
+            
+            # Clean up Pygame audio
+            try:
+                pygame.mixer.quit()
+                pygame.quit()
+            except Exception as e:
+                print(f"Error cleaning up Pygame: {e}")
+            
+            # Clean up sounddevice
+            try:
+                import sounddevice as sd
+                sd.stop()
+            except Exception as e:
+                print(f"Error cleaning up sounddevice: {e}")
+                
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
 
 def main():
     root = TkinterDnD.Tk()

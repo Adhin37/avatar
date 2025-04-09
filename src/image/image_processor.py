@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 class ImageProcessor:
     def __init__(self):
@@ -6,7 +6,8 @@ class ImageProcessor:
         self.processed_image = None
         self.mouth_region = None
         self.mouth_frames = []
-    
+        self.detected_lips = None
+        
     def load_image(self, image_path):
         """Load and process an image"""
         try:
@@ -20,10 +21,10 @@ class ImageProcessor:
             self.original_image = img.copy()
             self.processed_image = img.copy()
             
-            # Define mouth region
-            self._define_mouth_region()
+            # Detect facial features and lips
+            self._detect_facial_features()
             
-            # Generate mouth frames
+            # Generate mouth frames based on detected lips
             self.generate_mouth_frames()
             
             return True
@@ -75,126 +76,231 @@ class ImageProcessor:
             self.processed_image = padded_img
             
             # Update mouth region coordinates
-            self._update_mouth_region(new_width, new_height, pad_x, pad_y)
+            if self.mouth_region:
+                self._update_mouth_region(new_width, new_height, pad_x, pad_y)
             
             return True
         return False
     
-    def _define_mouth_region(self):
-        """Define the mouth region in the image"""
-        if self.processed_image:
-            width, height = self.processed_image.size
+    def _detect_facial_features(self):
+        """Detect facial features in the image including lips"""
+        if not self.processed_image:
+            return
             
-            # Calculate mouth position relative to face features
-            mouth_x_center = width * 0.5
-            mouth_y_position = height * 0.68  # Moved down to better match the avatar's mouth position
+        width, height = self.processed_image.size
+        
+        # For a more accurate implementation, we would use face detection libraries
+        # like OpenCV, dlib, or MediaPipe. For this implementation, we'll use a
+        # more sophisticated estimation approach based on facial proportions.
+        
+        # Estimate face region (typically center 60% of image height)
+        face_top = height * 0.2
+        face_bottom = height * 0.8
+        face_height = face_bottom - face_top
+        face_center_x = width * 0.5
+        
+        # Estimate mouth position (typical human face proportions)
+        # Mouth is typically around lower 1/3 of face
+        mouth_y_center = face_top + (face_height * 0.75)
+        
+        # Estimate mouth width (typically around 40% of face width)
+        face_width = width * 0.6
+        mouth_width = face_width * 0.45
+        
+        # Detect lips from color information
+        lips_top, lips_bottom = self._detect_lips_from_color(face_center_x, mouth_y_center, mouth_width)
+        
+        # Store detected lip coordinates
+        self.detected_lips = {
+            'center_x': face_center_x,
+            'center_y': mouth_y_center,
+            'width': mouth_width,
+            'top': lips_top,
+            'bottom': lips_bottom,
+            'height': lips_bottom - lips_top
+        }
+        
+        # Set mouth region based on detected lips
+        lip_padding = mouth_width * 0.05  # Add some padding around lips
+        self.mouth_region = (
+            int(face_center_x - mouth_width/2 - lip_padding),
+            int(lips_top - lip_padding),
+            int(face_center_x + mouth_width/2 + lip_padding),
+            int(lips_bottom + lip_padding)
+        )
+    
+    def _detect_lips_from_color(self, center_x, center_y, width):
+        """Detect lips using color information"""
+        # In a real implementation, this would use computer vision to detect lip color
+        # For this simplified version, we'll estimate based on likely lip position
+        
+        height = self.processed_image.height
+        estimated_lip_height = width * 0.3  # Lips are typically wider than tall
+        
+        lips_top = center_y - estimated_lip_height * 0.4  # Upper lip is smaller
+        lips_bottom = center_y + estimated_lip_height * 0.6  # Lower lip is bigger
+        
+        # Adjust based on image characteristics
+        # For example, try to find red/pink pixels in this area
+        try:
+            # Sample region where lips should be
+            lip_region = self.processed_image.crop((
+                int(center_x - width/3),
+                int(center_y - estimated_lip_height/2),
+                int(center_x + width/3),
+                int(center_y + estimated_lip_height/2)
+            ))
             
-            # Adjust mouth size relative to image size
-            mouth_width = width * 0.12  # Slightly smaller width
-            mouth_height = height * 0.04  # Slightly smaller height
+            # Convert to RGB for analysis
+            if lip_region.mode != 'RGB':
+                lip_region = lip_region.convert('RGB')
             
-            # Store the mouth region coordinates
-            self.mouth_region = (
-                int(mouth_x_center - mouth_width/2),
-                int(mouth_y_position - mouth_height/2),
-                int(mouth_x_center + mouth_width/2),
-                int(mouth_y_position + mouth_height/2)
-            )
+            # Analyze pixels to find lip-colored pixels
+            # Lips tend to be redder than surrounding skin
+            lip_color_pixels = []
+            for y in range(lip_region.height):
+                for x in range(lip_region.width):
+                    r, g, b = lip_region.getpixel((x, y))
+                    # Check if pixel is lip-colored (higher red/pink component)
+                    if r > 1.2 * g and r > 1.2 * b:
+                        lip_color_pixels.append((y + int(center_y - estimated_lip_height/2)))
+            
+            # If we found lip-colored pixels, adjust the lip positions
+            if lip_color_pixels:
+                lips_top = min(lip_color_pixels)
+                lips_bottom = max(lip_color_pixels)
+        except Exception as e:
+            print(f"Error in lip color detection: {e}")
+            # Fallback to estimates if color detection fails
+        
+        return lips_top, lips_bottom
     
     def _update_mouth_region(self, width, height, pad_x=0, pad_y=0):
         """Update mouth region coordinates based on new image size and padding"""
-        # Calculate mouth position relative to face features
-        mouth_x_center = width * 0.5
-        mouth_y_position = height * 0.68  # Moved down to better match the avatar's mouth position
-        
-        # Adjust mouth size relative to image size
-        mouth_width = width * 0.12  # Slightly smaller width
-        mouth_height = height * 0.04  # Slightly smaller height
-        
-        # Ensure mouth dimensions are at least 1 pixel
-        mouth_width = max(1, mouth_width)
-        mouth_height = max(1, mouth_height)
-        
-        # Add padding to the coordinates
-        self.mouth_region = (
-            int(pad_x + mouth_x_center - mouth_width/2),
-            int(pad_y + mouth_y_position - mouth_height/2),
-            int(pad_x + mouth_x_center + mouth_width/2),
-            int(pad_y + mouth_y_position + mouth_height/2)
-        )
-        
-        # Ensure mouth region is within image bounds
-        if self.processed_image:
-            img_width, img_height = self.processed_image.size
-            x1, y1, x2, y2 = self.mouth_region
+        if not self.mouth_region:
+            return
             
-            # Adjust if mouth region is outside image bounds
-            if x1 < 0:
-                x2 += abs(x1)
-                x1 = 0
-            if y1 < 0:
-                y2 += abs(y1)
-                y1 = 0
-            if x2 > img_width:
-                x1 -= (x2 - img_width)
-                x2 = img_width
-            if y2 > img_height:
-                y1 -= (y2 - img_height)
-                y2 = img_height
+        # Get original mouth region
+        x1, y1, x2, y2 = self.mouth_region
+        
+        # Calculate scale factors
+        if self.original_image:
+            scale_x = width / self.original_image.width
+            scale_y = height / self.original_image.height
             
-            # Ensure mouth region has positive dimensions
-            if x2 <= x1:
-                x2 = x1 + 1
-            if y2 <= y1:
-                y2 = y1 + 1
+            # Scale the mouth region
+            scaled_x1 = int(x1 * scale_x) + pad_x
+            scaled_y1 = int(y1 * scale_y) + pad_y
+            scaled_x2 = int(x2 * scale_x) + pad_x
+            scaled_y2 = int(y2 * scale_y) + pad_y
             
-            self.mouth_region = (x1, y1, x2, y2)
+            # Update the mouth region
+            self.mouth_region = (scaled_x1, scaled_y1, scaled_x2, scaled_y2)
+            
+            # Ensure mouth region is within image bounds
+            self._constrain_mouth_region_to_image()
     
-    def generate_mouth_frames(self):
-        """Generate different mouth shapes for animation"""
+    def _constrain_mouth_region_to_image(self):
+        """Ensure mouth region is within image bounds"""
         if not self.processed_image or not self.mouth_region:
             return
             
+        # Get image dimensions
+        img_width, img_height = self.processed_image.size
+        
+        # Get mouth region
+        x1, y1, x2, y2 = self.mouth_region
+        
+        # Adjust coordinates to stay within image bounds
+        x1 = max(0, min(x1, img_width-1))
+        y1 = max(0, min(y1, img_height-1))
+        x2 = max(x1+1, min(x2, img_width))
+        y2 = max(y1+1, min(y2, img_height))
+        
+        # Update mouth region
+        self.mouth_region = (x1, y1, x2, y2)
+    
+    def generate_mouth_frames(self):
+        """Generate realistic mouth shapes for animation"""
+        if not self.processed_image or not self.mouth_region or not self.detected_lips:
+            return
+            
+        # Extract mouth region dimensions
         x1, y1, x2, y2 = self.mouth_region
         mouth_width = x2 - x1
         mouth_height = y2 - y1
+        
+        # Get lip parameters
+        lips = self.detected_lips
+        center_x = lips['center_x'] - x1  # Relative to mouth region
+        center_y = lips['center_y'] - y1  # Relative to mouth region
+        lip_width = lips['width']
+        lip_height = lips['height']
+        
+        # Extract original mouth area
+        original_mouth = self.processed_image.crop(self.mouth_region)
         
         # Create a series of mouth shapes with different openness levels
         num_frames = 8  # Number of different mouth positions
         self.mouth_frames = []
         
         for i in range(num_frames):
-            # Create a transparent image for the mouth
-            mouth_img = Image.new('RGBA', (mouth_width, mouth_height), (0, 0, 0, 0))
+            # Create a copy of original mouth
+            mouth_img = original_mouth.copy()
             draw = ImageDraw.Draw(mouth_img)
             
             # Calculate openness based on frame index
             openness = i / (num_frames - 1)
             
-            # Extract lip color from the original image (approximate)
-            lip_color = (208, 108, 103, 255)  # Pink-ish color for lips
-            
-            # Draw upper lip (fixed)
-            upper_lip_height = int(mouth_height * 0.4)
-            draw.ellipse((0, 0, mouth_width, upper_lip_height*2), fill=lip_color)
-            
-            # Draw lower lip with varying openness
-            lower_lip_y = int(mouth_height * (0.5 + 0.25 * openness))
-            lower_lip_height = int(mouth_height * 0.4)
-            draw.ellipse((0, lower_lip_y-lower_lip_height, mouth_width, lower_lip_y+lower_lip_height), fill=lip_color)
-            
-            # If mouth is open, draw black inside
-            if openness > 0.1:
-                inner_mouth_height = int(mouth_height * openness * 0.8)
-                inner_mouth_y = int(mouth_height * 0.5)
-                inner_mouth_width = int(mouth_width * 0.8)
-                inner_mouth_x = int(mouth_width * 0.1)
+            # If not fully closed, create mouth opening
+            if openness > 0:
+                # Calculate mouth opening dimensions
+                open_width = lip_width * (0.5 + 0.3 * openness)
+                open_height = lip_height * openness * 0.7
                 
-                draw.ellipse(
-                    (inner_mouth_x, inner_mouth_y-inner_mouth_height//2, 
-                     inner_mouth_x+inner_mouth_width, inner_mouth_y+inner_mouth_height//2), 
-                    fill=(40, 40, 40, 255)
+                # Create a mask for the open mouth
+                mask = Image.new('L', mouth_img.size, 0)
+                mask_draw = ImageDraw.Draw(mask)
+                
+                # Draw an ellipse for the mouth opening
+                mask_draw.ellipse(
+                    (center_x - open_width/2, center_y - open_height/2,
+                     center_x + open_width/2, center_y + open_height/2),
+                    fill=255
                 )
+                
+                # Smooth the mask edges
+                mask = mask.filter(ImageFilter.GaussianBlur(1))
+                
+                # Create a dark "mouth cavity" image
+                mouth_cavity = Image.new('RGBA', mouth_img.size, (30, 10, 10, 255))
+                
+                # Apply the mask to the mouth cavity
+                mouth_img.paste(mouth_cavity, (0, 0), mask)
+                
+                # Accentuate lips (slightly darker and more saturated)
+                # Upper lip
+                upper_lip_height = int(lip_height * 0.4)
+                lip_shape = [
+                    (center_x - lip_width/2, center_y - upper_lip_height*0.5),
+                    (center_x - lip_width*0.25, center_y - upper_lip_height),
+                    (center_x, center_y - upper_lip_height*0.8),
+                    (center_x + lip_width*0.25, center_y - upper_lip_height),
+                    (center_x + lip_width/2, center_y - upper_lip_height*0.5),
+                ]
+                draw.line(lip_shape, fill=(180, 80, 80, 255), width=2)
+                
+                # Lower lip
+                lower_lip_height = int(lip_height * 0.5)
+                lower_y = center_y + open_height/2 - 1
+                lip_shape = [
+                    (center_x - lip_width/2, lower_y),
+                    (center_x - lip_width*0.25, lower_y + lower_lip_height*0.8),
+                    (center_x, lower_y + lower_lip_height),
+                    (center_x + lip_width*0.25, lower_y + lower_lip_height*0.8),
+                    (center_x + lip_width/2, lower_y),
+                ]
+                draw.line(lip_shape, fill=(180, 80, 80, 255), width=2)
             
             # Ensure the image has an alpha channel
             if mouth_img.mode != 'RGBA':
@@ -212,6 +318,10 @@ class ImageProcessor:
         
         # Calculate the frame index based on openness
         frame_index = int(openness * (len(self.mouth_frames) - 1))
+        
+        # Clamp to valid range
+        frame_index = max(0, min(frame_index, len(self.mouth_frames) - 1))
+        
         return self.mouth_frames[frame_index]
     
     def apply_mouth_frame(self, openness):
@@ -227,11 +337,6 @@ class ImageProcessor:
         if mouth_frame:
             # Get the mouth region coordinates
             x1, y1, x2, y2 = self.mouth_region
-            
-            # Ensure the mouth frame has the correct dimensions
-            if mouth_frame.size != (x2 - x1, y2 - y1):
-                # Resize the mouth frame to match the target region
-                mouth_frame = mouth_frame.resize((x2 - x1, y2 - y1), Image.LANCZOS)
             
             # Ensure both images have the same mode
             if display_img.mode != mouth_frame.mode:
@@ -271,10 +376,20 @@ class ImageProcessor:
             
             # Apply mouth frame if mouth region exists
             if self.mouth_region and 0 <= mouth_openness <= 1:
+                # Get the appropriate mouth frame
                 mouth_frame = self.get_mouth_frame(mouth_openness)
                 if mouth_frame:
                     x1, y1, x2, y2 = self.mouth_region
-                    current_frame.paste(mouth_frame, (x1, y1), mouth_frame)
+                    
+                    # Create a mask for natural blending
+                    if mouth_frame.mode == 'RGBA':
+                        r, g, b, a = mouth_frame.split()
+                        mask = a
+                    else:
+                        mask = None
+                    
+                    # Paste the mouth frame onto the image
+                    current_frame.paste(mouth_frame, (x1, y1), mask)
             
             return current_frame
             
@@ -284,4 +399,4 @@ class ImageProcessor:
     
     def get_mouth_region(self):
         """Get the current mouth region coordinates"""
-        return self.mouth_region 
+        return self.mouth_region
