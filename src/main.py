@@ -7,6 +7,7 @@ from PIL import ImageTk, Image, ImageDraw
 from ui.modern_button import ModernButton
 from ui.audio_dropzone import AudioDropZone
 from ui.playback_controls import PlaybackControls
+from ui.avatar_zone import AvatarZone
 from image.image_processor import ImageProcessor
 from audio.audio_processor import AudioProcessor
 from lipsync.lipsync_processor import LipSyncProcessor
@@ -36,29 +37,12 @@ class AvatarLipSyncApp:
         self.container = ttk.Frame(self.root, padding="20")
         self.container.pack(fill=tk.BOTH, expand=True)
         
-        # Create title
-        title_frame = ttk.Frame(self.container)
-        title_frame.pack(fill=tk.X, pady=(0, 20))
-        title_label = ttk.Label(title_frame, text="Avatar Lip Sync", 
-                              font=("Helvetica", 24, "bold"), foreground="#cba6f7")
-        title_label.pack()
-        
-        # Create the avatar display area with modern border
-        self.avatar_frame = tk.Frame(self.container, bg="#313244", bd=2)
-        self.avatar_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
-        
-        # Create a frame for the 2D image with fixed height
-        self.image_frame = tk.Frame(self.avatar_frame, width=400, height=400, bg="#1e1e2e")
-        self.image_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
-        self.image_frame.pack_propagate(False)  # Prevent frame from shrinking
-        
-        # Create label to display the avatar
-        self.avatar_label = tk.Label(self.image_frame, bg="#1e1e2e")
-        self.avatar_label.pack(fill=tk.BOTH, expand=True)
+        # Create avatar zone with specific dimensions
+        self.avatar_zone = AvatarZone(self.container, width=600, height=400)
         
         # Create the control panel below the avatar
         self.control_frame = ttk.Frame(self.container)
-        self.control_frame.pack(fill=tk.X)
+        self.control_frame.pack(fill=tk.X, pady=(10, 0))
         
         # Create audio drop zone
         self.audio_dropzone = AudioDropZone(
@@ -85,119 +69,79 @@ class AvatarLipSyncApp:
         self.root.after(100, self.on_window_loaded)  # Wait for window to be fully loaded
     
     def set_app_icon(self):
-        """Set a custom icon for the application"""
+        """Set a custom icon for the application that works across platforms"""
         try:
-            # Create a simple icon if the file doesn't exist
-            icon_path = "resources/app_icon.ico"
-            if not os.path.exists(icon_path):
-                self.create_app_icon(icon_path)
+            # Get absolute path to the icon file
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            icon_path = os.path.join(current_dir, "resources", "app_icon.ico")
             
-            # Set the icon
-            self.root.iconbitmap(icon_path)
+            # Create icon if it doesn't exist
+            if not os.path.exists(icon_path):
+                if not self.create_app_icon(icon_path):
+                    print(f"Failed to create icon at {icon_path}")
+                    return
+            
+            # Verify the file exists and is readable
+            if not os.path.isfile(icon_path):
+                print(f"Icon file not found at {icon_path}")
+                return
+                
+            if not os.access(icon_path, os.R_OK):
+                print(f"Icon file not readable at {icon_path}")
+                return
+            
+            try:
+                # Load and convert the icon
+                with Image.open(icon_path) as ico:
+                    # Convert to RGBA if needed
+                    if ico.mode != 'RGBA':
+                        ico = ico.convert('RGBA')
+                    
+                    # Get the size of the icon
+                    size = ico.size[0]  # Icons are square, so width = height
+                    
+                    # If the icon is too small, resize it up to 32x32
+                    if size < 32:
+                        ico = ico.resize((32, 32), Image.Resampling.LANCZOS)
+                    # If the icon is too large, resize it down to 64x64
+                    elif size > 64:
+                        ico = ico.resize((64, 64), Image.Resampling.LANCZOS)
+                    
+                    # Convert to PhotoImage and set
+                    photo = ImageTk.PhotoImage(ico)
+                    self.root.tk.call('wm', 'iconphoto', self.root._w, photo)
+            except Exception as e:
+                print(f"Error converting icon: {e}")
+                # Fallback to creating a simple icon
+                self.create_and_set_simple_icon()
+            
         except Exception as e:
             print(f"Error setting app icon: {e}")
+            print(f"Attempted icon path: {icon_path}")
+            # Fallback to creating a simple icon
+            self.create_and_set_simple_icon()
     
-    def create_app_icon(self, icon_path):
-        """Create a custom app icon that matches the application theme"""
+    def create_and_set_simple_icon(self):
+        """Create and set a simple icon as fallback"""
         try:
-            # Create resources directory if it doesn't exist
-            os.makedirs(os.path.dirname(icon_path), exist_ok=True)
-            
-            # Create a high-resolution icon (will be scaled down for ICO)
-            icon_size = 256
-            icon = Image.new('RGBA', (icon_size, icon_size), (0, 0, 0, 0))
+            # Create a simple colored square as icon
+            icon_size = 32
+            icon = Image.new('RGBA', (icon_size, icon_size), "#1e1e2e")
             draw = ImageDraw.Draw(icon)
             
-            # Colors from our app theme
-            bg_color = "#1e1e2e"
-            accent_color = "#cba6f7"
-            highlight_color = "#f8f8f2"
-            
-            # Draw circular background
-            draw.ellipse((0, 0, icon_size, icon_size), fill=bg_color)
-            
-            # Draw stylized avatar face (outer circle)
-            margin = icon_size * 0.1
+            # Draw a simple avatar-like circle
+            margin = 2
             draw.ellipse(
-                (margin, margin, icon_size - margin, icon_size - margin),
-                fill=accent_color
+                [margin, margin, icon_size - margin, icon_size - margin],
+                fill="#cba6f7"
             )
             
-            # Draw avatar features
-            face_color = "#FFE4E1"  # Soft skin tone
-            hair_color = "#8B0000"  # Dark red for hair
+            # Convert to PhotoImage and set
+            photo = ImageTk.PhotoImage(icon)
+            self.root.tk.call('wm', 'iconphoto', self.root._w, photo)
             
-            # Face
-            face_margin = icon_size * 0.15
-            draw.ellipse(
-                (face_margin, face_margin, icon_size - face_margin, icon_size - face_margin),
-                fill=face_color
-            )
-            
-            # Hair (stylized curves)
-            hair_points = [
-                (icon_size * 0.2, icon_size * 0.3),  # Start left
-                (icon_size * 0.1, icon_size * 0.5),  # Left curve
-                (icon_size * 0.15, icon_size * 0.7),
-                (icon_size * 0.3, icon_size * 0.85),
-                (icon_size * 0.7, icon_size * 0.85),
-                (icon_size * 0.85, icon_size * 0.7),
-                (icon_size * 0.9, icon_size * 0.5),  # Right curve
-                (icon_size * 0.8, icon_size * 0.3),  # End right
-            ]
-            draw.polygon(hair_points, fill=hair_color)
-            
-            # Draw mouth
-            mouth_width = icon_size * 0.4
-            mouth_height = icon_size * 0.15
-            mouth_x = (icon_size - mouth_width) / 2
-            mouth_y = icon_size * 0.6
-            
-            # Lips
-            lip_color = "#CD5C5C"  # Indian red
-            draw.ellipse(
-                (mouth_x, mouth_y, mouth_x + mouth_width, mouth_y + mouth_height),
-                fill=lip_color
-            )
-            
-            # Sound wave lines (indicating audio/lip sync)
-            wave_color = highlight_color
-            wave_thickness = 3
-            wave_spacing = 8
-            wave_width = icon_size * 0.3
-            wave_x = (icon_size - wave_width) / 2
-            wave_y = icon_size * 0.8
-            
-            for i in range(3):
-                y_offset = i * wave_spacing
-                # Draw sound wave lines
-                draw.line(
-                    (wave_x, wave_y + y_offset,
-                     wave_x + wave_width * 0.3, wave_y - wave_spacing + y_offset,
-                     wave_x + wave_width * 0.7, wave_y + wave_spacing + y_offset,
-                     wave_x + wave_width, wave_y + y_offset),
-                    fill=wave_color,
-                    width=wave_thickness
-                )
-            
-            # Resize to standard icon sizes
-            icon_sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
-            icons = []
-            for size in icon_sizes:
-                icons.append(icon.resize(size, Image.LANCZOS))
-            
-            # Save as ICO with multiple sizes
-            icons[0].save(
-                icon_path,
-                format='ICO',
-                sizes=icon_sizes,
-                optimize=True
-            )
-            
-            return True
         except Exception as e:
-            print(f"Error creating app icon: {e}")
-            return False
+            print(f"Error creating fallback icon: {e}")
     
     def on_window_resize(self, event):
         """Handle window resize events"""
@@ -209,20 +153,23 @@ class AvatarLipSyncApp:
         self.last_width = event.width
         self.last_height = event.height
         
-        # Resize the avatar image
-        if hasattr(self, 'image_frame'):
-            width = self.image_frame.winfo_width()
-            height = self.image_frame.winfo_height()
-            if width > 10 and height > 10:  # Ensure valid dimensions
-                self.image_processor.resize_image(width, height)
-                self.display_avatar()
+        # Calculate new avatar dimensions based on window size
+        new_width = min(event.width - 40, 600)  # Max width of 600, with 20px padding on each side
+        new_height = min(event.height - 200, 400)  # Leave space for controls and status bar
+        
+        # Update avatar zone size
+        self.avatar_zone.resize(new_width, new_height)
+        
+        # Update the avatar display
+        if self.image_processor.has_image():
+            self.display_avatar()
     
     def on_window_loaded(self):
         """Called after the window is fully loaded"""
         # Force an update to ensure widgets are properly sized
         self.root.update_idletasks()
         
-        # Load initial avatar and automatically remove background
+        # Load initial avatar
         self.load_avatar_image("resources/female_avatar.png")
         
         # Setup audio processor callbacks
@@ -230,61 +177,34 @@ class AvatarLipSyncApp:
             on_playback_update=self.update_playback,
             on_playback_complete=self.handle_playback_complete
         )
-        
-        # Force initial resize to ensure proper layout
-        width = self.image_frame.winfo_width()
-        height = self.image_frame.winfo_height()
-        if width > 10 and height > 10:
-            self.image_processor.resize_image(width, height)
-            self.display_avatar()
     
     def load_avatar_image(self, image_path):
-        """Load and display the avatar image"""
-        if self.image_processor.load_image(image_path):
-            # Automatically remove background
-            self.image_processor.remove_background()
-            
-            # Resize the image to fit the frame
-            width = self.image_frame.winfo_width()
-            height = self.image_frame.winfo_height()
-            if width > 10 and height > 10:  # Ensure valid dimensions
-                self.image_processor.resize_image(width, height)
-            
-            self.display_avatar()
-            self.status_bar.config(text="Avatar image loaded successfully")
-        else:
-            self.status_bar.config(text="Error loading avatar image")
+        """Load the avatar image"""
+        try:
+            # Process the image
+            if self.image_processor.load_image(image_path):
+                self.display_avatar()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error loading avatar image: {e}")
+            return False
     
     def display_avatar(self, mouth_openness=0):
-        """Display the avatar with current mouth state"""
-        try:
-            display_img = self.image_processor.apply_mouth_frame(mouth_openness)
-            if display_img:
-                # Get the current frame size
-                frame_width = self.image_frame.winfo_width()
-                frame_height = self.image_frame.winfo_height()
-                
-                # Ensure we have valid dimensions
-                if frame_width <= 1 or frame_height <= 1:
-                    frame_width = 400
-                    frame_height = 400
-                
-                # Create a PhotoImage from the display image
-                photo = ImageTk.PhotoImage(display_img)
-                
-                # Update the avatar label
-                self.avatar_label.config(image=photo)
-                self.avatar_label.image = photo  # Keep a reference to prevent garbage collection
-        except Exception as e:
-            print(f"Error displaying avatar: {e}")
-            # Try to display the original image without mouth frame
-            try:
-                if self.image_processor.processed_image:
-                    photo = ImageTk.PhotoImage(self.image_processor.processed_image)
-                    self.avatar_label.config(image=photo)
-                    self.avatar_label.image = photo
-            except Exception as e2:
-                print(f"Error displaying fallback image: {e2}")
+        """Display the avatar with optional mouth animation"""
+        if not self.image_processor.has_image():
+            return
+        
+        # Get the processed image
+        processed_image = self.image_processor.get_current_frame(mouth_openness)
+        if processed_image:
+            # Display the image in the avatar zone
+            self.avatar_zone.display_avatar(processed_image)
+            
+            # Update mouth region if it exists
+            mouth_region = self.image_processor.get_mouth_region()
+            if mouth_region:
+                self.avatar_zone.set_mouth_region(*mouth_region)
     
     def handle_audio_drop(self, file_path):
         """Handle dropped audio file"""

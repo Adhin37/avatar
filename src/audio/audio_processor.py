@@ -1,7 +1,6 @@
 import numpy as np
 import librosa
-import sounddevice as sd
-import soundfile as sf
+import pygame
 import threading
 import time
 
@@ -17,6 +16,27 @@ class AudioProcessor:
         self.current_frame = 0
         self.on_playback_update = None
         self.on_playback_complete = None
+        self.has_audio_device = False
+        
+        # Initialize audio device
+        self.initialize_audio_device()
+    
+    def initialize_audio_device(self):
+        """Initialize audio using pygame mixer with PulseAudio"""
+        try:
+            # Set SDL audio driver to pulseaudio before initializing pygame
+            import os
+            os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'
+            
+            pygame.mixer.init()
+            print("Initialized pygame audio mixer with PulseAudio")
+            self.has_audio_device = True
+            return True
+        except Exception as e:
+            print(f"Error initializing pygame audio: {e}")
+            print("Running in silent mode")
+            self.has_audio_device = False
+            return False
     
     def load_audio(self, file_path):
         """Load and process an audio file"""
@@ -75,20 +95,29 @@ class AudioProcessor:
     def stop_playback(self):
         """Stop audio playback"""
         self.is_playing = False
-        sd.stop()
+        if self.has_audio_device:
+            try:
+                pygame.mixer.music.stop()
+            except Exception as e:
+                print(f"Error stopping audio: {e}")
     
     def _playback_thread(self, start_time):
         """Handle audio playback in a separate thread"""
         try:
-            # Load audio data
-            data, fs = sf.read(self.audio_file, dtype='float32')
-            
-            # Calculate starting sample
-            start_sample = int(start_time * fs)
-            
-            # Play audio from the current position
-            if start_sample < len(data):
-                sd.play(data[start_sample:], fs)
+            if self.has_audio_device:
+                try:
+                    # Load the audio file
+                    pygame.mixer.music.load(self.audio_file)
+                    
+                    # Calculate position to start from
+                    start_pos = max(0.0, min(1.0, start_time / self.audio_duration))
+                    
+                    # Play the audio from the position
+                    pygame.mixer.music.play(0, start_time)
+                except Exception as e:
+                    print(f"Error playing audio: {e}")
+                    print("Continuing in silent mode")
+                    self.has_audio_device = False
             
             # Frame timing and starting position
             frame_duration = 0.0512  # seconds (based on hop_length/sr)
@@ -96,7 +125,7 @@ class AudioProcessor:
             # Set starting frame based on current playback time
             if start_time > 0 and self.audio_duration > 0:
                 self.current_frame = min(len(self.phonemes) - 1, 
-                                      int((start_time / self.audio_duration) * len(self.phonemes)))
+                                    int((start_time / self.audio_duration) * len(self.phonemes)))
             else:
                 self.current_frame = 0
                 
@@ -124,7 +153,11 @@ class AudioProcessor:
                     self.on_playback_complete()
                 
             # Stop audio
-            sd.stop()
+            if self.has_audio_device:
+                try:
+                    pygame.mixer.music.stop()
+                except Exception as e:
+                    print(f"Error stopping audio: {e}")
                 
         except Exception as e:
             print(f"Error during playback: {e}")
@@ -144,7 +177,7 @@ class AudioProcessor:
         # Update position
         self.current_playback_time = position * self.audio_duration
         self.current_frame = min(len(self.phonemes) - 1, 
-                               int(position * len(self.phonemes)))
+                            int(position * len(self.phonemes)))
         
         # Restart playback if it was playing
         if was_playing:

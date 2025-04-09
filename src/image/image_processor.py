@@ -1,6 +1,4 @@
 from PIL import Image, ImageDraw
-import io
-from rembg import remove
 
 class ImageProcessor:
     def __init__(self):
@@ -14,6 +12,11 @@ class ImageProcessor:
         try:
             # Load the image
             img = Image.open(image_path)
+            
+            # Convert to RGBA if needed
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
             self.original_image = img.copy()
             self.processed_image = img.copy()
             
@@ -27,26 +30,6 @@ class ImageProcessor:
         except Exception as e:
             print(f"Error loading image: {e}")
             return False
-    
-    def remove_background(self):
-        """Remove background from the current image"""
-        if self.original_image:
-            try:
-                # Convert PIL Image to bytes
-                img_byte_arr = io.BytesIO()
-                self.original_image.save(img_byte_arr, format='PNG')
-                img_byte_arr = img_byte_arr.getvalue()
-                
-                # Remove background
-                output = remove(img_byte_arr)
-                
-                # Convert back to PIL Image
-                self.processed_image = Image.open(io.BytesIO(output))
-                return True
-            except Exception as e:
-                print(f"Error removing background: {e}")
-                return False
-        return False
     
     def reset_image(self):
         """Reset to original image"""
@@ -220,11 +203,15 @@ class ImageProcessor:
             self.mouth_frames.append(mouth_img)
     
     def get_mouth_frame(self, openness):
-        """Get the appropriate mouth frame based on openness value"""
+        """Get a mouth frame for a specific openness value"""
         if not self.mouth_frames:
             return None
-            
-        frame_index = min(len(self.mouth_frames)-1, int(openness * len(self.mouth_frames) / 30))
+        
+        # Ensure openness is between 0 and 1
+        openness = max(0, min(1, openness))
+        
+        # Calculate the frame index based on openness
+        frame_index = int(openness * (len(self.mouth_frames) - 1))
         return self.mouth_frames[frame_index]
     
     def apply_mouth_frame(self, openness):
@@ -267,4 +254,34 @@ class ImageProcessor:
             # Paste the mouth frame onto the image
             display_img.paste(mouth_frame, (x1, y1), mask)
         
-        return display_img 
+        return display_img
+    
+    def has_image(self):
+        """Check if an image is loaded"""
+        return self.processed_image is not None
+    
+    def get_current_frame(self, mouth_openness=0):
+        """Get the current frame with the specified mouth openness"""
+        if not self.has_image():
+            return None
+        
+        try:
+            # Create a copy of the processed image
+            current_frame = self.processed_image.copy()
+            
+            # Apply mouth frame if mouth region exists
+            if self.mouth_region and 0 <= mouth_openness <= 1:
+                mouth_frame = self.get_mouth_frame(mouth_openness)
+                if mouth_frame:
+                    x1, y1, x2, y2 = self.mouth_region
+                    current_frame.paste(mouth_frame, (x1, y1), mouth_frame)
+            
+            return current_frame
+            
+        except Exception as e:
+            print(f"Error getting current frame: {e}")
+            return None
+    
+    def get_mouth_region(self):
+        """Get the current mouth region coordinates"""
+        return self.mouth_region 
