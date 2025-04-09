@@ -17,6 +17,8 @@ from lipsync.lipsync_processor import LipSyncProcessor
 class AvatarLipSyncApp:
     def __init__(self, root):
         self.root = root
+        self.is_closing = False  # Add flag to track closing state
+        
         self.root.title("Avatar Lip Sync App")
         self.root.geometry("700x800")
         self.root.configure(bg="#1e1e2e")
@@ -40,7 +42,7 @@ class AvatarLipSyncApp:
         self.container.pack(fill=tk.BOTH, expand=True)
         
         # Create avatar zone with reduced dimensions
-        self.avatar_zone = AvatarZone(self.container, width=300, height=400)  # Reduced from 600x400
+        self.avatar_zone = AvatarZone(self.container, width=350, height=450)  # Adjusted for portrait orientation
         
         # Create the control panel below the avatar
         self.control_frame = ttk.Frame(self.container)
@@ -235,72 +237,60 @@ class AvatarLipSyncApp:
             self.load_audio_file(file_path)
     
     def load_audio_file(self, file_path):
-        """Load and process audio file"""
+        """Load and process an audio file"""
         try:
-            filename = os.path.basename(file_path)
-            self.status_bar.config(text=f"Loading audio file: {filename}")
+            # Update UI to show loading state
+            self.status_bar.config(text="Loading audio file...")
+            self.audio_dropzone.update_status("Loading audio file...", color="#89b4fa")
+            self.root.update()  # Force UI update
             
-            # Show loading indicator
-            self.audio_dropzone.update_status(f"Loading {filename}...", "#89b4fa")
-            
-            # Process the audio file
+            # Load the audio file
             if not self.audio_processor.load_audio(file_path):
                 raise Exception("Failed to load audio file")
             
-            if not self.audio_processor.sample_rate:
-                raise Exception("Invalid sample rate")
+            # Update UI with success state
+            filename = os.path.basename(file_path)
+            self.status_bar.config(text=f"Loaded: {filename}")
             
-            # Process audio for lip sync
-            if not self.lipsync_processor.process_audio(self.audio_processor.audio_data, self.audio_processor.sample_rate):
-                raise Exception("Failed to process audio for lip sync")
+            # Hide dropzone and show success message briefly before hiding
+            self.audio_dropzone.update_status(f"Loaded: {filename}", color="#a6e3a1")  # Green success color
+            self.root.after(1000, self.audio_dropzone.hide)  # Hide after 1 second
             
-            # Hide drop zone and show playback controls
-            self.audio_dropzone.hide()
+            # Show playback controls
             self.playback_controls.show()
             
             # Update waveform display
             self.playback_controls.update_waveform(
                 self.audio_processor.audio_data,
-                self.audio_processor.current_playback_time,
+                0,
                 self.audio_processor.audio_duration
             )
             
             # Update time display
-            self.playback_controls.update_time(
-                self.audio_processor.current_playback_time,
-                self.audio_processor.audio_duration
-            )
+            self.playback_controls.update_time(0, self.audio_processor.audio_duration)
             
-            # Start lip sync processing
-            self.lipsync_processor.start_processing(
-                on_update=self.update_lipsync,
-                on_complete=self.handle_playback_complete
-            )
-            
-            # Start playback
-            self.audio_processor.start_playback()
-            self.playback_controls.set_playing(True)
-            
-            self.status_bar.config(text="Audio loaded successfully")
+            return True
             
         except Exception as e:
-            print(f"Error processing audio: {e}")
-            self.status_bar.config(text=f"Error: {str(e)}")
-            self.audio_dropzone.update_status("Error processing audio", "#ff5555")
+            # Update UI with error state
+            error_msg = f"Error loading audio: {str(e)}"
+            self.status_bar.config(text=error_msg)
+            self.audio_dropzone.update_status("Failed to load audio file", color="#f38ba8")  # Red error color
+            print(error_msg)
+            return False
     
     def toggle_playback(self):
         """Toggle between play and pause"""
         if self.audio_processor.is_playing:
             self.audio_processor.stop_playback()
-            self.lipsync_processor.stop_processing()
             self.playback_controls.set_playing(False)
         else:
-            self.audio_processor.start_playback(self.audio_processor.current_playback_time)
-            self.lipsync_processor.start_processing(
-                on_update=self.update_lipsync,
-                on_complete=self.handle_playback_complete
-            )
-            self.playback_controls.set_playing(True)
+            # Start playback from current position
+            if self.audio_processor.start_playback(self.audio_processor.current_playback_time):
+                self.playback_controls.set_playing(True)
+            else:
+                self.status_bar.config(text="Error starting playback")
+                self.playback_controls.set_playing(False)
     
     def seek_audio(self, position):
         """Seek to a position in the audio"""
@@ -348,38 +338,44 @@ class AvatarLipSyncApp:
     
     def on_closing(self):
         """Handle window closing event"""
-        # Clean up resources
-        self.cleanup_resources()
-        # Destroy the window
-        self.root.destroy()
-    
-    def cleanup_resources(self):
-        """Clean up all resources before exiting"""
+        if self.is_closing:  # Prevent multiple cleanup attempts
+            return
+            
+        self.is_closing = True
+        
         try:
-            # Stop audio playback
+            # Stop audio playback first
             if hasattr(self, 'audio_processor'):
-                self.audio_processor.stop_playback()
+                try:
+                    self.audio_processor.stop_playback()
+                except Exception as e:
+                    print(f"Error stopping audio playback: {e}")
             
-            # Stop lip sync processing
-            if hasattr(self, 'lipsync_processor'):
-                self.lipsync_processor.stop_processing()
-            
-            # Clean up Pygame audio
+            # Clean up Pygame
             try:
                 pygame.mixer.quit()
                 pygame.quit()
             except Exception as e:
                 print(f"Error cleaning up Pygame: {e}")
             
-            # Clean up sounddevice
+            # Clean up Tkinter last
             try:
-                import sounddevice as sd
-                sd.stop()
+                self.root.quit()
             except Exception as e:
-                print(f"Error cleaning up sounddevice: {e}")
-                
+                print(f"Error during Tkinter cleanup: {e}")
+            
         except Exception as e:
             print(f"Error during cleanup: {e}")
+        finally:
+            try:
+                self.root.destroy()
+            except Exception as e:
+                print(f"Error destroying window: {e}")
+    
+    def cleanup_resources(self):
+        """Cleanup callback for atexit"""
+        if not self.is_closing:  # Only cleanup if not already closing
+            self.on_closing()
 
 def main():
     root = TkinterDnD.Tk()

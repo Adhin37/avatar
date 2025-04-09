@@ -29,8 +29,8 @@ class AudioProcessor:
             # Set SDL audio driver to pulseaudio before initializing pygame
             os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'
             
-            pygame.mixer.init()
-            print("Initialized pygame audio mixer with PulseAudio")
+            pygame.mixer.init(frequency=44100)  # Use standard frequency for initial init
+            print("Initialized pygame audio mixer")
             self.has_audio_device = True
             return True
         except Exception as e:
@@ -42,23 +42,13 @@ class AudioProcessor:
     def _playback_thread(self, start_time):
         """Handle audio playback in a separate thread"""
         try:
-            # Load audio data
-            y, sr = librosa.load(self.audio_file)
-            
-            # Calculate starting sample
-            start_sample = int(start_time * sr)
-            
             # Try to play audio if we have a device
             if self.has_audio_device:
                 try:
-                    # Load the audio file
+                    # Load and play the audio file
                     pygame.mixer.music.load(self.audio_file)
-                    
-                    # Calculate position to start from
-                    start_pos = max(0.0, min(1.0, start_time / self.audio_duration))
-                    
-                    # Play the audio from the position
                     pygame.mixer.music.play(0, start_time)
+                    print("Started audio playback")
                 except Exception as e:
                     print(f"Error playing audio: {e}")
                     print("Continuing in silent mode")
@@ -75,12 +65,25 @@ class AudioProcessor:
                 self.current_frame = 0
                 
             total_frames = len(self.phonemes)
-            start_time = time.time() - start_time
+            playback_start = time.time() - start_time
             
             # Animate mouth with the audio
             while self.is_playing and self.current_frame < total_frames:
-                # Calculate current playback time
-                self.current_playback_time = min(self.audio_duration, time.time() - start_time)
+                # Calculate current playback time based on pygame music position
+                if self.has_audio_device and pygame.mixer.music.get_busy():
+                    try:
+                        pos = pygame.mixer.music.get_pos()
+                        if pos >= 0:
+                            self.current_playback_time = pos / 1000.0  # Convert ms to seconds
+                        else:
+                            self.current_playback_time = time.time() - playback_start
+                    except:
+                        self.current_playback_time = time.time() - playback_start
+                else:
+                    self.current_playback_time = time.time() - playback_start
+                
+                # Ensure we don't exceed audio duration
+                self.current_playback_time = min(self.current_playback_time, self.audio_duration)
                 
                 # Update UI if callback provided
                 if self.on_playback_update:
@@ -91,7 +94,7 @@ class AudioProcessor:
                 self.current_frame += 1
                 
             # Reset when done
-            if self.current_frame >= total_frames:
+            if self.current_frame >= total_frames or self.current_playback_time >= self.audio_duration:
                 self.is_playing = False
                 self.current_playback_time = 0
                 if self.on_playback_complete:
@@ -154,19 +157,39 @@ class AudioProcessor:
     def load_audio(self, file_path):
         """Load and process an audio file"""
         try:
+            print(f"Loading audio file: {os.path.basename(file_path)}")
+            
             # Stop any existing playback
             self.stop_playback()
             
             # Load audio file
+            print("Reading audio data...")
             self.audio_file = file_path
             self.audio_data, self.sample_rate = librosa.load(file_path, sr=None)
+            print(f"Audio loaded: {self.sample_rate}Hz, {len(self.audio_data)} samples")
             
             # Calculate audio duration
             self.audio_duration = librosa.get_duration(y=self.audio_data, sr=self.sample_rate)
+            print(f"Audio duration: {self.audio_duration:.2f} seconds")
             
             # Extract phonemes for lip sync
+            print("Extracting phonemes for lip sync...")
             self.phonemes = self.extract_phonemes(self.audio_data, self.sample_rate)
+            print(f"Generated {len(self.phonemes)} phoneme frames")
             
+            # Initialize pygame mixer with the correct sample rate if needed
+            if not self.has_audio_device or pygame.mixer.get_init()[0] != self.sample_rate:
+                try:
+                    print(f"Reinitializing audio device with sample rate {self.sample_rate}Hz")
+                    pygame.mixer.quit()
+                    pygame.mixer.init(frequency=self.sample_rate)
+                    self.has_audio_device = True
+                    print("Audio device initialized successfully")
+                except Exception as e:
+                    print(f"Error initializing audio device with sample rate {self.sample_rate}: {e}")
+                    self.has_audio_device = False
+            
+            print("Audio loading complete")
             return True
             
         except Exception as e:
@@ -210,10 +233,23 @@ class AudioProcessor:
     
     def cleanup(self):
         """Clean up audio resources"""
-        self.stop_playback()
-        
-        # Clean up Pygame
         try:
-            pygame.mixer.quit()
+            # Stop playback first
+            self.stop_playback()
+            
+            # Clean up pygame mixer if initialized
+            if self.has_audio_device:
+                try:
+                    pygame.mixer.music.stop()
+                except Exception:
+                    pass  # Ignore errors during stop
+                    
+                try:
+                    pygame.mixer.quit()
+                except Exception:
+                    pass  # Ignore errors during quit
+                
+            self.has_audio_device = False
+            
         except Exception as e:
-            print(f"Error cleaning up Pygame mixer: {e}") 
+            print(f"Error during audio cleanup: {e}") 

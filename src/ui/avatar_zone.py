@@ -55,14 +55,16 @@ class AvatarZone:
             canvas_height = self.canvas.winfo_height()
             
             if canvas_width > 0 and canvas_height > 0:
-                # Calculate scaling factor to maintain aspect ratio
-                width_ratio = canvas_width / self.avatar_image.width
+                # Calculate scaling factor to fit height while maintaining aspect ratio
                 height_ratio = canvas_height / self.avatar_image.height
-                scale_factor = min(width_ratio, height_ratio) * 0.9  # 90% of available space
+                new_width = int(self.avatar_image.width * height_ratio)
+                new_height = canvas_height
                 
-                # Calculate new dimensions
-                new_width = int(self.avatar_image.width * scale_factor)
-                new_height = int(self.avatar_image.height * scale_factor)
+                # If new width is too wide, scale down based on width
+                if new_width > canvas_width:
+                    width_ratio = canvas_width / self.avatar_image.width
+                    new_width = canvas_width
+                    new_height = int(self.avatar_image.height * width_ratio)
                 
                 # Resize image
                 resized_image = self.avatar_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
@@ -70,9 +72,9 @@ class AvatarZone:
                 # Convert to PhotoImage and store reference
                 self.photo_image = ImageTk.PhotoImage(resized_image)
                 
-                # Calculate position to center the image
+                # Calculate position to center horizontally and align to bottom
                 x = (canvas_width - new_width) // 2
-                y = (canvas_height - new_height) // 2
+                y = canvas_height - new_height  # Align to bottom
                 
                 # Clear previous image and display new one
                 self.canvas.delete("all")
