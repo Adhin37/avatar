@@ -1,0 +1,14 @@
+setuptools>=68.2.2
+wheel>=0.41.2
+numpy
+librosa
+pillow
+pyaudio
+pygame
+PyQt5
+rembg
+scipy
+sounddevice
+soundfile
+tkinterdnd2
+onnxruntime
