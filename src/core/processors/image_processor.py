@@ -454,3 +454,24 @@ class ImageProcessor:
         y2 = y1 + mouth_height
         
         return (x1, y1, x2, y2)
+
+    def get_image(self):
+        """Get the current processed image"""
+        return self.processed_image
+        
+    def clear(self):
+        """Clear all image resources"""
+        try:
+            # Clear image data
+            self.original_image = None
+            self.processed_image = None
+            self.mouth_region = None
+            self.detected_lips = None
+            self.mouth_frames = []
+            
+            # Clear any other stored data
+            if hasattr(self, 'photo_image'):
+                self.photo_image = None
+                
+        except Exception as e:
+            print(f"Error clearing image resources: {e}")

@@ -1,5 +1,8 @@
 """
-Avatar Lip Sync App - A Python application for synchronizing avatar mouth movements with audio.
+Avatar Lip Sync Application
 """
 
-__version__ = "1.0.0" 
+from .main import AppWindow
+
+__version__ = "1.0.0"
+__all__ = ['AppWindow'] 

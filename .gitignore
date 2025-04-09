@@ -1,2 +1,38 @@
 avatar
 **/__pycache__
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-specific
+resources/*.obj
+resources/*.jpg
+resources/*.png
+resources/*.ico
+
+# Testing
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Logs
+*.log
