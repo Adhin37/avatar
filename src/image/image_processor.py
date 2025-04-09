@@ -366,37 +366,91 @@ class ImageProcessor:
         return self.processed_image is not None
     
     def get_current_frame(self, mouth_openness=0):
-        """Get the current frame with the specified mouth openness"""
-        if not self.has_image():
+        """Get the current frame with mouth animation"""
+        if not self.processed_image:
             return None
+            
+        # Create a copy of the image for animation
+        frame = self.processed_image.copy()
         
-        try:
-            # Create a copy of the processed image
-            current_frame = self.processed_image.copy()
+        # Get mouth region
+        mouth_region = self.mouth_region
+        if not mouth_region:
+            return frame
             
-            # Apply mouth frame if mouth region exists
-            if self.mouth_region and 0 <= mouth_openness <= 1:
-                # Get the appropriate mouth frame
-                mouth_frame = self.get_mouth_frame(mouth_openness)
-                if mouth_frame:
-                    x1, y1, x2, y2 = self.mouth_region
-                    
-                    # Create a mask for natural blending
-                    if mouth_frame.mode == 'RGBA':
-                        r, g, b, a = mouth_frame.split()
-                        mask = a
-                    else:
-                        mask = None
-                    
-                    # Paste the mouth frame onto the image
-                    current_frame.paste(mouth_frame, (x1, y1), mask)
+        x1, y1, x2, y2 = mouth_region
+        mouth_width = x2 - x1
+        mouth_height = y2 - y1
+        
+        # Calculate the maximum mouth opening
+        max_opening = mouth_height * 0.7  # 70% of mouth region height
+        
+        # Calculate actual opening based on mouth_openness (0-1)
+        opening = int(max_opening * mouth_openness)
+        
+        if opening > 0:
+            # Create a new mouth shape
+            draw = ImageDraw.Draw(frame)
             
-            return current_frame
+            # Calculate control points for natural lip curve
+            center_x = (x1 + x2) / 2
             
-        except Exception as e:
-            print(f"Error getting current frame: {e}")
-            return None
+            # Upper lip curve
+            upper_y = y1 + mouth_height * 0.3
+            upper_ctrl_y = upper_y - mouth_height * 0.1
+            
+            # Lower lip curve (adjusted by opening)
+            lower_y = upper_y + opening
+            lower_ctrl_y = lower_y + mouth_height * 0.1
+            
+            # Draw lips with natural curve
+            # Upper lip
+            upper_lip = [
+                (x1, upper_y),  # Start
+                (x1 + mouth_width * 0.25, upper_ctrl_y),  # Control point 1
+                (center_x, upper_y - mouth_height * 0.1),  # Peak
+                (x2 - mouth_width * 0.25, upper_ctrl_y),  # Control point 2
+                (x2, upper_y)  # End
+            ]
+            
+            # Lower lip
+            lower_lip = [
+                (x1, upper_y),  # Start
+                (x1 + mouth_width * 0.25, lower_ctrl_y),  # Control point 1
+                (center_x, lower_y + mouth_height * 0.1),  # Valley
+                (x2 - mouth_width * 0.25, lower_ctrl_y),  # Control point 2
+                (x2, upper_y)  # End
+            ]
+            
+            # Draw mouth interior (dark color)
+            draw.polygon(upper_lip + lower_lip[::-1], fill="#1a1b26")
+            
+            # Draw lip outlines
+            draw.line(upper_lip, fill="#d35f70", width=2, joint="curve")  # Upper lip
+            draw.line(lower_lip, fill="#d35f70", width=2, joint="curve")  # Lower lip
+        
+        return frame
     
     def get_mouth_region(self):
         """Get the current mouth region coordinates"""
         return self.mouth_region
+
+    def _calculate_mouth_region(self, image):
+        """Calculate the mouth region coordinates based on image dimensions"""
+        width = image.width
+        height = image.height
+        
+        # Calculate mouth region - positioned at the avatar's actual mouth
+        mouth_width = width // 3  # 1/3 of image width for more natural proportion
+        mouth_height = height // 15  # Smaller height for more precise lip sync
+        
+        # Center the mouth region horizontally
+        x1 = (width - mouth_width) // 2
+        x2 = x1 + mouth_width
+        
+        # Position vertically at 58% from top for upper lip (adjusted based on the avatar image)
+        upper_lip_y = int(height * 0.58)
+        y1 = upper_lip_y
+        y2 = y1 + mouth_height
+        
+        return (x1, y1, x2, y2)

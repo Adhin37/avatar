@@ -29,8 +29,12 @@ class AudioProcessor:
             # Set SDL audio driver to pulseaudio before initializing pygame
             os.environ['SDL_AUDIODRIVER'] = 'pulseaudio'
             
-            pygame.mixer.init(frequency=44100)  # Use standard frequency for initial init
-            print("Initialized pygame audio mixer")
+            # Initialize with CD quality audio (44.1kHz, 16 bit, stereo)
+            pygame.mixer.pre_init(44100, -16, 2, 2048)
+            pygame.mixer.init()
+            pygame.mixer.set_num_channels(2)  # Use stereo
+            
+            print("Initialized pygame audio mixer with high quality settings")
             self.has_audio_device = True
             return True
         except Exception as e:
@@ -47,6 +51,7 @@ class AudioProcessor:
                 try:
                     # Load and play the audio file
                     pygame.mixer.music.load(self.audio_file)
+                    pygame.mixer.music.set_volume(1.0)  # Ensure volume is at maximum
                     pygame.mixer.music.play(0, start_time)
                     print("Started audio playback")
                 except Exception as e:
@@ -162,7 +167,7 @@ class AudioProcessor:
             # Stop any existing playback
             self.stop_playback()
             
-            # Load audio file
+            # Load audio file with librosa for analysis
             print("Reading audio data...")
             self.audio_file = file_path
             self.audio_data, self.sample_rate = librosa.load(file_path, sr=None)
@@ -177,17 +182,22 @@ class AudioProcessor:
             self.phonemes = self.extract_phonemes(self.audio_data, self.sample_rate)
             print(f"Generated {len(self.phonemes)} phoneme frames")
             
-            # Initialize pygame mixer with the correct sample rate if needed
+            # Reinitialize pygame mixer with the correct sample rate if needed
             if not self.has_audio_device or pygame.mixer.get_init()[0] != self.sample_rate:
                 try:
                     print(f"Reinitializing audio device with sample rate {self.sample_rate}Hz")
                     pygame.mixer.quit()
-                    pygame.mixer.init(frequency=self.sample_rate)
+                    pygame.mixer.pre_init(self.sample_rate, -16, 2, 2048)
+                    pygame.mixer.init()
+                    pygame.mixer.set_num_channels(2)
                     self.has_audio_device = True
                     print("Audio device initialized successfully")
                 except Exception as e:
                     print(f"Error initializing audio device with sample rate {self.sample_rate}: {e}")
                     self.has_audio_device = False
+            
+            # Set volume to maximum
+            pygame.mixer.music.set_volume(1.0)
             
             print("Audio loading complete")
             return True

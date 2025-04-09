@@ -78,7 +78,7 @@ class AvatarZone:
                 
                 # Clear previous image and display new one
                 self.canvas.delete("all")
-                self.canvas.create_image(x, y, anchor=tk.NW, image=self.photo_image)
+                self.canvas.create_image(x, y, anchor=tk.NW, image=self.photo_image, tags="avatar")
                 
                 # Reset mouth region
                 self.mouth_region = None

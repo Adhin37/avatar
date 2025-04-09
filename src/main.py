@@ -203,16 +203,42 @@ class AvatarLipSyncApp:
         if not self.image_processor.has_image():
             return
         
-        # Get the processed image
+        # Get the processed image with mouth animation
         processed_image = self.image_processor.get_current_frame(mouth_openness)
         if processed_image:
             # Display the image in the avatar zone
-            self.avatar_zone.display_avatar(processed_image)
-            
-            # Update mouth region if it exists
-            mouth_region = self.image_processor.get_mouth_region()
-            if mouth_region:
-                self.avatar_zone.set_mouth_region(*mouth_region)
+            if self.avatar_zone.display_avatar(processed_image):
+                # Update mouth region after successful display
+                # This ensures the region is properly scaled to the displayed image size
+                canvas_width = self.avatar_zone.canvas.winfo_width()
+                canvas_height = self.avatar_zone.canvas.winfo_height()
+                
+                if canvas_width > 0 and canvas_height > 0:
+                    # Get the displayed image position and size
+                    image_id = self.avatar_zone.canvas.find_withtag("avatar")
+                    if image_id:
+                        bbox = self.avatar_zone.canvas.bbox(image_id[0])
+                        if bbox:
+                            img_x, img_y, img_x2, img_y2 = bbox
+                            img_width = img_x2 - img_x
+                            img_height = img_y2 - img_y
+                            
+                            # Calculate mouth region relative to displayed image
+                            mouth_region = self.image_processor.get_mouth_region()
+                            if mouth_region:
+                                orig_x1, orig_y1, orig_x2, orig_y2 = mouth_region
+                                
+                                # Scale mouth region to match displayed image size
+                                scale_x = img_width / processed_image.width
+                                scale_y = img_height / processed_image.height
+                                
+                                x1 = img_x + orig_x1 * scale_x
+                                y1 = img_y + orig_y1 * scale_y
+                                x2 = img_x + orig_x2 * scale_x
+                                y2 = img_y + orig_y2 * scale_y
+                                
+                                # Update mouth region in avatar zone
+                                self.avatar_zone.set_mouth_region(x1, y1, x2, y2)
     
     def handle_audio_drop(self, file_path):
         """Handle dropped audio file"""
