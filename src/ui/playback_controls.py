@@ -81,13 +81,17 @@ class PlaybackControls:
     def _setup_play_button_hover(self):
         def on_enter(e):
             self.play_canvas.itemconfig(self.play_circle, 
-                                      fill="#66BB6A" if self.is_playing else "#FF7043")
-            self.play_canvas.create_oval(0, 0, 54, 54, outline="#89b4fa", width=2, dash=(5, 2))
+                                    fill="#66BB6A" if not self.is_playing else "#FF7043")
+            # Delete any existing highlight first
+            self.play_canvas.delete("highlight")
+            # Create circular highlight instead of rectangle
+            self.play_canvas.create_oval(0, 0, 54, 54, outline="#89b4fa", width=2, 
+                                    dash=(5, 2), tags="highlight")
         
         def on_leave(e):
             self.play_canvas.itemconfig(self.play_circle, 
-                                      fill=self.pause_bg_color if self.is_playing else self.play_bg_color)
-            self.play_canvas.delete("glow")
+                                    fill=self.play_bg_color if not self.is_playing else self.pause_bg_color)
+            self.play_canvas.delete("highlight")
         
         self.play_canvas.bind("<Enter>", on_enter)
         self.play_canvas.bind("<Leave>", on_leave)
@@ -139,18 +143,20 @@ class PlaybackControls:
                 if current_time > 0 and total_time > 0:
                     progress_x = (current_time / total_time) * width
                     
-                    if x < progress_x:
-                        intensity = int(200 + (x / progress_x) * 55) if progress_x > 0 else 200
-                        color = f"#{intensity//2:02x}{intensity//2:02x}{intensity:02x}"
+                    if x <= progress_x:  # Changed from < to <= to ensure exact match
+                        # Brighter color for played part
+                        intensity = 200
+                        color = f"#89b4fa"  # Use a consistent brand blue color for played parts
                     else:
-                        intensity = int(127 + ((width-x) / (width-progress_x)) * 40) if width != progress_x else 127
+                        # Dimmer color for unplayed part
+                        intensity = 127
                         color = f"#{intensity:02x}{intensity:02x}{intensity:02x}"
                 else:
                     intensity = int(127 + (i / width) * 40)
                     color = f"#{intensity:02x}{intensity:02x}{intensity:02x}"
                     
                 self.waveform_canvas.create_line(x, y1, x, y2, fill=color, width=1)
-            
+                        
             # Draw playhead
             if current_time > 0 and total_time > 0:
                 playhead_x = (current_time / total_time) * width
@@ -182,10 +188,13 @@ class PlaybackControls:
         """Show the controls with fade effect"""
         self.controls_layout.pack(fill=tk.X, pady=10)
         
-        # Add glow effect to play button
-        self.play_canvas.configure(bg="#2e2e3e")
-        self.play_canvas.create_oval(0, 0, 54, 54, outline="#89b4fa", width=2, dash=(5, 2))
-    
+        # Force redraw of play button to ensure proper appearance
+        self._draw_play_button()
+        
+        # Add glow effect to play button without overlap
+        self.play_canvas.delete("glow")
+        self.play_canvas.create_oval(0, 0, 54, 54, outline="#89b4fa", width=2, 
+                                dash=(5, 2), tags="glow")
     def hide(self):
         """Hide the controls"""
         self.controls_layout.pack_forget()

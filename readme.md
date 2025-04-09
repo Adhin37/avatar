@@ -60,6 +60,7 @@ A Python application that synchronizes avatar lip movements with audio playback.
    ```
    sudo apt update
    sudo apt upgrade
+   sudo apt-get install pulseaudio pulseaudio-utils
    ```
 
 2. Install Python and pip:
