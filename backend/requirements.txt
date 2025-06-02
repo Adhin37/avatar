@@ -1,0 +1,36 @@
+# Local TTS Avatar Application - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core TTS Engine
+TTS>=0.22.0
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Web Server
+Flask>=2.3.0
+Flask-CORS>=4.0.0
+
+# Audio Processing
+soundfile>=0.12.0
+librosa>=0.10.0
+numpy>=1.24.0
+
+# Phoneme Alignment (optional, for advanced features)
+phonemizer>=3.2.0
+
+# Utility Libraries
+scipy>=1.10.0
+matplotlib>=3.7.0
+
+# Development Tools (optional)
+pytest>=7.0.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Platform-specific audio dependencies
+# Windows users may need: pyaudio>=0.2.11
+# Linux users may need: python3-pyaudio
+# macOS users should install via: brew install portaudio && pip install pyaudio
+
+# Note: For best performance, install PyTorch with GPU support:
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121

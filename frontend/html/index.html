@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Talking Avatar</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>🗣️ Local Talking Avatar</h1>
+        <p>Fully local neural text-to-speech with realistic lip-sync animation</p>
+    </div>
+
+    <div class="main-container">
+        <div class="avatar-section">
+            <canvas id="avatar-canvas"></canvas>
+            <div id="loading-overlay" class="loading-overlay">
+                <div class="loading-spinner"></div>
+                <div id="loading-text">Loading avatar...</div>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <div class="control-group">
+                <label for="text-input">Enter text to speak:</label>
+                <textarea 
+                    id="text-input" 
+                    placeholder="Type your message here... (up to 1000 characters)"
+                    maxlength="1000"
+                >Hello! I am your local talking avatar. I can speak any text you type with realistic lip synchronization, all running locally on your computer without any internet connection.</textarea>
+            </div>
+
+            <div class="control-group">
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Speech Speed</span>
+                        <span id="speed-value" class="slider-value">1.0x</span>
+                    </div>
+                    <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Volume</span>
+                        <span id="volume-value" class="slider-value">80%</span>
+                    </div>
+                    <input type="range" id="volume-slider" min="0" max="100" step="5" value="80">
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="speak-btn">
+                    🎤 Speak
+                </button>
+                <button id="stop-btn" disabled>
+                    ⏹️ Stop
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="status-text" class="status-connecting">Connecting to TTS server...</span>
+    </div>
+
+    <!-- Three.js for 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/loaders/GLTFLoader.js"></script>
+
+    <!-- Application modules -->
+    <script type="module">
+        import { App } from '../js/App.js';
+        
+        // Initialize the application when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const app = new App();
+            app.initialize();
+        });
+    </script>
+</body>
+</html>
