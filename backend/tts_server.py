@@ -12,6 +12,7 @@ import os
 import numpy as np
 import soundfile as sf
 from typing import List, Dict, Tuple, Optional
+from pathlib import Path
 
 # TTS imports
 try:
@@ -242,41 +243,55 @@ def get_phoneme_map():
         ...
     }
     """
-    # Load phoneme map from assets
-    phoneme_map_path = os.path.join('assets', 'phoneme_map.json')
+    # Load phoneme map from backend assets directory
+    backend_dir = Path(__file__).parent
+    phoneme_map_path = backend_dir / 'assets' / 'phoneme_map.json'
     
-    if os.path.exists(phoneme_map_path):
-        with open(phoneme_map_path, 'r') as f:
-            phoneme_map = json.load(f)
+    if phoneme_map_path.exists():
+        try:
+            with open(phoneme_map_path, 'r') as f:
+                phoneme_map = json.load(f)
+        except Exception as e:
+            print(f"Error loading phoneme map from {phoneme_map_path}: {e}")
+            phoneme_map = get_default_phoneme_map()
     else:
-        # Default phoneme to viseme mapping
-        phoneme_map = {
-            # Vowels - open mouth shapes
-            'AH': 0, 'AA': 0, 'AO': 1, 'AW': 1, 'AY': 0,
-            'EH': 2, 'ER': 2, 'EY': 2, 'IH': 3, 'IY': 3,
-            'OW': 1, 'OY': 1, 'UH': 4, 'UW': 4,
-            
-            # Consonants - various mouth shapes
-            'B': 5, 'P': 5, 'M': 5,  # Bilabial (lips together)
-            'F': 6, 'V': 6,          # Labiodental (teeth on lip)
-            'TH': 7, 'DH': 7,        # Dental (tongue between teeth)
-            'T': 8, 'D': 8, 'N': 8, 'L': 8, 'R': 8,  # Alveolar
-            'S': 9, 'Z': 9,          # Sibilants
-            'SH': 10, 'ZH': 10, 'CH': 10, 'JH': 10,  # Post-alveolar
-            'K': 11, 'G': 11, 'NG': 11,  # Velar
-            'HH': 12, 'Y': 12, 'W': 12,  # Glottal/approximants
-            'SIL': 13  # Silence/neutral
-        }
+        print(f"Phoneme map not found at {phoneme_map_path}, using default")
+        phoneme_map = get_default_phoneme_map()
     
     return jsonify(phoneme_map)
+
+
+def get_default_phoneme_map():
+    """Get default phoneme to viseme mapping."""
+    return {
+        # Vowels - open mouth shapes
+        'AH': 0, 'AA': 0, 'AO': 1, 'AW': 1, 'AY': 0,
+        'EH': 2, 'ER': 2, 'EY': 2, 'IH': 3, 'IY': 3,
+        'OW': 1, 'OY': 1, 'UH': 4, 'UW': 4,
+        
+        # Consonants - various mouth shapes
+        'B': 5, 'P': 5, 'M': 5,  # Bilabial (lips together)
+        'F': 6, 'V': 6,          # Labiodental (teeth on lip)
+        'TH': 7, 'DH': 7,        # Dental (tongue between teeth)
+        'T': 8, 'D': 8, 'N': 8, 'L': 8, 'R': 8,  # Alveolar
+        'S': 9, 'Z': 9,          # Sibilants
+        'SH': 10, 'ZH': 10, 'CH': 10, 'JH': 10,  # Post-alveolar
+        'K': 11, 'G': 11, 'NG': 11,  # Velar
+        'HH': 12, 'Y': 12, 'W': 12,  # Glottal/approximants
+        'SIL': 13  # Silence/neutral
+    }
 
 
 def main():
     """Initialize and run the TTS server."""
     print("Initializing TTS Server...")
     
+    # Get the backend directory
+    backend_dir = Path(__file__).parent
+    
     # Create assets directory if it doesn't exist
-    os.makedirs('assets', exist_ok=True)
+    assets_dir = backend_dir / 'assets'
+    assets_dir.mkdir(exist_ok=True)
     
     # Initialize TTS
     if not tts_controller.initialize():

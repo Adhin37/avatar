@@ -25,21 +25,26 @@ A **fully local**, self-contained application that displays a realistic, animate
 
 ```
 local-talking-avatar/
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
-├── tts_server.py            # TTS backend server
-├── assets/
-│   └── phoneme_map.json     # Phoneme to viseme mapping
-├── frontend/
-│   ├── index.html           # Main application page
-│   ├── package.json         # Frontend dependencies
-│   └── js/
-│       ├── App.js           # Main application controller
-│       ├── AvatarController.js    # 3D avatar rendering
-│       ├── TTSController.js       # TTS communication
-│       ├── AudioPlayer.js         # Audio playback
-│       └── LipSyncController.js   # Lip synchronization
-└── docs/                    # Additional documentation
+├── README.md                     # This file
+├── .gitignore                    # Git ignore patterns
+├── backend/                      # Backend services
+│   ├── assets/
+│   │   └── phoneme_map.json      # Phoneme to viseme mapping
+│   ├── requirements.txt          # Python dependencies
+│   ├── tts_server.py            # TTS backend server
+│   ├── setup_script.py          # Setup validation script
+│   └── launch_script.py         # Application launcher
+└── frontend/                     # Frontend application
+    ├── index.html               # Main application page
+    ├── package.json             # Frontend dependencies
+    ├── css/
+    │   └── style.css            # Application styling
+    └── js/
+        ├── App.js               # Main application controller
+        ├── AvatarController.js  # 3D avatar rendering
+        ├── TTSController.js     # TTS communication
+        ├── AudioPlayer.js       # Audio playback
+        └── LipSyncController.js # Lip synchronization
 ```
 
 ## 🚀 Quick Start
@@ -47,7 +52,7 @@ local-talking-avatar/
 ### Prerequisites
 
 - **Python 3.8+** with pip
-- **Node.js 14+** with npm (for development server)
+- **Node.js 14+** with npm (optional, for development server)
 - **Modern web browser** (Chrome, Firefox, Safari, Edge)
 - **4GB+ RAM** (for TTS models)
 - **2GB+ disk space** (for dependencies and models)
@@ -57,11 +62,13 @@ local-talking-avatar/
 1. **Clone or download** this project to your local machine
 
 2. **Install Python dependencies**:
+
    ```bash
-   pip install -r requirements.txt
+   pip install -r backend/requirements.txt
    ```
 
 3. **Install frontend development server** (optional):
+
    ```bash
    cd frontend
    npm install
@@ -69,34 +76,49 @@ local-talking-avatar/
 
 ### Running the Application
 
-1. **Start the TTS server**:
+#### Option 1: Automated Launch (Recommended)
+
+1. **Run the launch script**:
+
    ```bash
+   cd backend
+   python launch_script.py
+   ```
+
+   This will automatically:
+   - Start the TTS server
+   - Start the frontend server
+   - Open your browser to the application
+
+#### Option 2: Manual Launch
+
+1. **Start the TTS server**:
+
+   ```bash
+   cd backend
    python tts_server.py
    ```
-   
+
    Wait for the message: `TTS Server ready!` and `Starting server on http://localhost:5000`
 
 2. **Start the frontend** (choose one method):
-   
+
    **Option A: Using npm (recommended)**:
+
    ```bash
    cd frontend
    npm start
    ```
-   
+
    **Option B: Using Python's built-in server**:
+
    ```bash
    cd frontend
    python -m http.server 3000
    ```
-   
-   **Option C: Using any local web server**:
-   - Serve the `frontend/` directory on any port
-   - Open `index.html` in your browser
 
 3. **Open your browser** and navigate to:
-   - `http://localhost:3000` (if using npm or Python server)
-   - Or open `frontend/index.html` directly in your browser
+   - `http://localhost:3000`
 
 ## 🎮 Usage
 
@@ -123,7 +145,7 @@ local-talking-avatar/
 
 The application uses Coqui TTS models. The default model (`tts_models/en/ljspeech/tacotron2-DDC`) will be downloaded automatically on first use.
 
-To use a different model, edit `tts_server.py`:
+To use a different model, edit `backend/tts_server.py`:
 
 ```python
 # Change the model name in TTSController.__init__()
@@ -131,13 +153,14 @@ self.model_name = "tts_models/en/ljspeech/glow-tts"
 ```
 
 Available models can be listed with:
+
 ```bash
 tts --list_models
 ```
 
 ### Phoneme Mapping
 
-Customize lip sync by editing `assets/phoneme_map.json`. Each phoneme maps to a viseme index (0-13):
+Customize lip sync by editing `backend/assets/phoneme_map.json`. Each phoneme maps to a viseme index (0-13):
 
 ```json
 {
@@ -152,7 +175,8 @@ Customize lip sync by editing `assets/phoneme_map.json`. Each phoneme maps to a 
 
 To use a custom 3D avatar:
 
-1. Replace the procedural avatar in `AvatarController.js` with glTF loading:
+1. Replace the procedural avatar in `frontend/js/AvatarController.js` with glTF loading:
+
 ```javascript
 // In loadAvatar() method
 const loader = new THREE.GLTFLoader();
@@ -163,14 +187,30 @@ const gltf = await loader.loadAsync('path/to/your/avatar.glb');
 
 ## 🔧 Development
 
+### Project Setup
+
+1. **Validate installation**:
+
+   ```bash
+   cd backend
+   python setup_script.py
+   ```
+
+2. **Run development servers**:
+
+   ```bash
+   cd backend
+   python launch_script.py
+   ```
+
 ### Adding New Features
 
 The modular architecture makes it easy to extend:
 
-- **New TTS engines**: Modify `TTSController` class
-- **Avatar improvements**: Update `AvatarController` class  
-- **Audio effects**: Extend `AudioPlayer` class
-- **Enhanced lip sync**: Modify `LipSyncController` class
+- **New TTS engines**: Modify `backend/tts_server.py` and `TTSController` class
+- **Avatar improvements**: Update `frontend/js/AvatarController.js` class  
+- **Audio effects**: Extend `frontend/js/AudioPlayer.js` class
+- **Enhanced lip sync**: Modify `frontend/js/LipSyncController.js` class
 
 ### Code Style
 
@@ -181,6 +221,7 @@ The modular architecture makes it easy to extend:
 ### Testing
 
 Test the TTS server:
+
 ```bash
 curl -X POST http://localhost:5000/synthesize \
   -H "Content-Type: application/json" \
@@ -192,38 +233,51 @@ curl -X POST http://localhost:5000/synthesize \
 ### Common Issues
 
 **TTS Server won't start**:
+
 - Check Python version: `python --version` (need 3.8+)
-- Install missing dependencies: `pip install -r requirements.txt`
+- Install missing dependencies: `pip install -r backend/requirements.txt`
 - Check port 5000 isn't in use: `netstat -an | grep 5000`
 
 **Avatar won't load**:
+
 - Check browser console for JavaScript errors
 - Ensure WebGL is supported: visit `about:support` (Firefox) or `chrome://gpu` (Chrome)
 - Try a different browser
 
 **No audio playback**:
+
 - Check browser audio permissions
 - Try clicking in the page first (Chrome autoplay policy)
 - Check system volume and browser tab audio settings
 
 **Lip sync not working**:
+
 - Verify TTS server is responding: visit `http://localhost:5000/health`
 - Check browser console for timing errors
 - Ensure audio is playing correctly first
 
 **Performance issues**:
+
 - Close other browser tabs
 - Reduce system load
 - Try a lower speech speed setting
 
+**File not found errors**:
+
+- Ensure you're running commands from the correct directory
+- Backend commands should run from the `backend/` directory
+- Frontend commands should run from the `frontend/` directory
+
 ### System Requirements
 
 **Minimum**:
+
 - 4GB RAM, dual-core CPU
 - Integrated graphics with WebGL support
 - 2GB free disk space
 
 **Recommended**:
+
 - 8GB+ RAM, quad-core CPU
 - Dedicated graphics card
 - SSD storage
@@ -295,8 +349,9 @@ MIT License - see LICENSE file for details.
 For issues and questions:
 
 1. Check the troubleshooting section above
-2. Search existing GitHub issues
-3. Create a new issue with:
+2. Run the setup validation: `python backend/setup_script.py`
+3. Search existing GitHub issues
+4. Create a new issue with:
    - System information
    - Browser details
    - Console error messages

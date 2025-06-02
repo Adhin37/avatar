@@ -1,0 +1,47 @@
+{
+  "name": "local-talking-avatar-project",
+  "version": "1.0.0",
+  "description": "Fully local talking avatar with neural TTS and realistic lip-sync",
+  "main": "launch.py",
+  "scripts": {
+    "start": "python launch.py",
+    "setup": "pip install -r backend/requirements.txt && cd frontend && npm install",
+    "dev": "python launch.py",
+    "backend": "cd backend && python tts_server.py",
+    "frontend": "cd frontend && npm start",
+    "validate": "cd backend && python setup_script.py",
+    "install-python": "pip install -r backend/requirements.txt",
+    "install-frontend": "cd frontend && npm install",
+    "test-tts": "curl -X POST http://localhost:5000/health"
+  },
+  "keywords": [
+    "avatar",
+    "tts",
+    "text-to-speech",
+    "lip-sync",
+    "three.js",
+    "webgl",
+    "speech-synthesis",
+    "local",
+    "offline",
+    "neural-networks",
+    "ai"
+  ],
+  "author": "AI Assistant",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0",
+    "python": ">=3.8.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/local-talking-avatar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/local-talking-avatar/issues"
+  },
+  "homepage": "https://github.com/your-username/local-talking-avatar#readme",
+  "workspaces": [
+    "frontend"
+  ]
+}

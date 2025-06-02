@@ -21,6 +21,11 @@ class AvatarLauncher:
         self.frontend_process = None
         self.should_stop = False
         
+        # Get project root (parent of backend directory)
+        self.backend_dir = Path(__file__).parent
+        self.project_root = self.backend_dir.parent
+        self.frontend_dir = self.project_root / 'frontend'
+        
     def check_dependencies(self):
         """Quick dependency check before launch"""
         try:
@@ -30,7 +35,7 @@ class AvatarLauncher:
             return True
         except ImportError as e:
             print(f"❌ Missing dependencies: {e}")
-            print("Please run: pip install -r requirements.txt")
+            print("Please run: pip install -r backend/requirements.txt")
             return False
     
     def start_tts_server(self):
@@ -38,8 +43,12 @@ class AvatarLauncher:
         print("🚀 Starting TTS server...")
         
         try:
+            # Change to backend directory for TTS server
+            tts_server_path = self.backend_dir / 'tts_server.py'
+            
             self.tts_process = subprocess.Popen(
-                [sys.executable, 'tts_server.py'],
+                [sys.executable, str(tts_server_path)],
+                cwd=str(self.backend_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
@@ -76,23 +85,21 @@ class AvatarLauncher:
         """Start the frontend development server"""
         print("🌐 Starting frontend server...")
         
-        frontend_dir = Path('frontend')
-        if not frontend_dir.exists():
-            print("❌ Frontend directory not found")
+        if not self.frontend_dir.exists():
+            print(f"❌ Frontend directory not found: {self.frontend_dir}")
             return False
         
         # Try npm start first, fall back to Python server
         try:
-            os.chdir('frontend')
-            
             # Check if package.json exists and npm is available
-            if Path('package.json').exists():
+            if (self.frontend_dir / 'package.json').exists():
                 try:
                     subprocess.check_output(['npm', '--version'], stderr=subprocess.DEVNULL)
                     print("📦 Using npm development server...")
                     
                     self.frontend_process = subprocess.Popen(
                         ['npm', 'start'],
+                        cwd=str(self.frontend_dir),
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         universal_newlines=True
@@ -119,14 +126,11 @@ class AvatarLauncher:
             
             self.frontend_process = subprocess.Popen(
                 [sys.executable, '-m', 'http.server', '3000'],
+                cwd=str(self.frontend_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True
             )
-        
-        finally:
-            # Return to parent directory
-            os.chdir('..')
         
         # Wait for frontend server to start
         time.sleep(2)
@@ -214,6 +218,10 @@ class AvatarLauncher:
         """Main launch sequence"""
         print("🎭 Local Talking Avatar Launcher")
         print("=" * 40)
+        print(f"Project root: {self.project_root}")
+        print(f"Backend dir: {self.backend_dir}")
+        print(f"Frontend dir: {self.frontend_dir}")
+        print("=" * 40)
         
         # Setup signal handlers
         self.setup_signal_handlers()
@@ -282,7 +290,8 @@ def main():
     # Show usage instructions
     print("This script will start both the TTS backend and frontend servers.")
     print("Make sure you have installed all dependencies first:")
-    print("  pip install -r requirements.txt")
+    print("  pip install -r backend/requirements.txt")
+    print("  cd frontend && npm install")
     print()
     
     # Ask for confirmation
@@ -298,7 +307,7 @@ def main():
         print("👋 Thanks for using Local Talking Avatar!")
     else:
         print("❌ Application failed to start properly")
-        print("💡 Try running setup.py first to check for issues")
+        print("💡 Try running backend/setup_script.py first to check for issues")
         sys.exit(1)
 
 
