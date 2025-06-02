@@ -1,4 +1,4 @@
-# Local Talking Avatar - Project Memory
+# Talking 3D Avatar - Project Avatar
 
 ## Project Overview
 

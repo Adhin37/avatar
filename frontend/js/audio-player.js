@@ -4,45 +4,31 @@
  */
 
 export class AudioPlayer {
-    /**
-     * Initialize the Audio Player
-     */
     constructor() {
-        // Web Audio API components
         this.audioContext = null;
         this.audioBuffer = null;
         this.sourceNode = null;
         this.gainNode = null;
         
-        // Playback state
         this.isPlaying = false;
         this.isPaused = false;
         this.startTime = 0;
         this.pauseTime = 0;
         this.volume = 0.8;
         
-        // Callbacks
         this.onEndedCallback = null;
         
-        // Bind methods
         this.handleEnded = this.handleEnded.bind(this);
     }
     
-    /**
-     * Initialize the Web Audio API context
-     * @returns {Promise<void>}
-     */
     async initialize() {
         try {
-            // Create audio context
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Create gain node for volume control
             this.gainNode = this.audioContext.createGain();
             this.gainNode.connect(this.audioContext.destination);
             this.gainNode.gain.value = this.volume;
             
-            // Resume context if it's suspended (required for Chrome autoplay policy)
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
@@ -55,11 +41,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Load and decode base64 encoded audio data
-     * @param {string} base64Data - Base64 encoded audio data
-     * @returns {Promise<void>}
-     */
     async loadBase64Audio(base64Data) {
         if (!this.audioContext) {
             throw new Error('Audio context not initialized');
@@ -70,7 +51,6 @@ export class AudioPlayer {
         }
         
         try {
-            // Convert base64 to ArrayBuffer
             const binaryString = atob(base64Data);
             const arrayBuffer = new ArrayBuffer(binaryString.length);
             const uint8Array = new Uint8Array(arrayBuffer);
@@ -79,7 +59,6 @@ export class AudioPlayer {
                 uint8Array[i] = binaryString.charCodeAt(i);
             }
             
-            // Decode audio data
             this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
             
             console.log('Audio loaded successfully:', {
@@ -94,11 +73,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Load audio from a URL
-     * @param {string} url - Audio file URL
-     * @returns {Promise<void>}
-     */
     async loadAudioFromUrl(url) {
         if (!this.audioContext) {
             throw new Error('Audio context not initialized');
@@ -121,11 +95,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Play the loaded audio
-     * @param {Function} onEndedCallback - Callback function to call when playback ends
-     * @returns {Promise<void>}
-     */
     async play(onEndedCallback = null) {
         if (!this.audioBuffer) {
             throw new Error('No audio loaded');
@@ -137,21 +106,17 @@ export class AudioPlayer {
         }
         
         try {
-            // Resume audio context if suspended
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
             
-            // Create new source node
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
             this.sourceNode.connect(this.gainNode);
             
-            // Set up ended callback
             this.onEndedCallback = onEndedCallback;
             this.sourceNode.onended = this.handleEnded;
             
-            // Start playback
             this.sourceNode.start(0);
             this.startTime = this.audioContext.currentTime;
             this.isPlaying = true;
@@ -165,9 +130,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Stop audio playback
-     */
     stop() {
         if (!this.isPlaying) {
             return;
@@ -192,10 +154,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Pause audio playback (Note: Web Audio API doesn't support pause/resume directly)
-     * This implementation stops the audio and remembers the position
-     */
     pause() {
         if (!this.isPlaying || this.isPaused) {
             return;
@@ -208,23 +166,17 @@ export class AudioPlayer {
         console.log('Audio paused at:', this.pauseTime);
     }
     
-    /**
-     * Resume audio playback from paused position
-     * @returns {Promise<void>}
-     */
     async resume() {
         if (!this.isPaused || !this.audioBuffer) {
             return;
         }
         
         try {
-            // Create new source node for resumed playback
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
             this.sourceNode.connect(this.gainNode);
             this.sourceNode.onended = this.handleEnded;
             
-            // Start from paused position
             const offset = this.pauseTime;
             const duration = this.audioBuffer.duration - offset;
             
@@ -241,10 +193,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Get current playback time in milliseconds
-     * @returns {number} Current time in milliseconds
-     */
     getCurrentTimeMs() {
         if (!this.isPlaying || !this.audioContext) {
             return this.isPaused ? this.pauseTime * 1000 : 0;
@@ -254,39 +202,22 @@ export class AudioPlayer {
         return Math.max(0, elapsed * 1000);
     }
     
-    /**
-     * Get current playback time in seconds
-     * @returns {number} Current time in seconds
-     */
     getCurrentTimeSeconds() {
         return this.getCurrentTimeMs() / 1000;
     }
     
-    /**
-     * Get total duration of loaded audio in milliseconds
-     * @returns {number} Duration in milliseconds, 0 if no audio loaded
-     */
     getDurationMs() {
         return this.audioBuffer ? this.audioBuffer.duration * 1000 : 0;
     }
     
-    /**
-     * Get total duration of loaded audio in seconds
-     * @returns {number} Duration in seconds, 0 if no audio loaded
-     */
     getDurationSeconds() {
         return this.audioBuffer ? this.audioBuffer.duration : 0;
     }
     
-    /**
-     * Set volume (0.0 to 1.0)
-     * @param {number} volume - Volume level (0.0 = mute, 1.0 = full volume)
-     */
     setVolume(volume) {
         this.volume = Math.max(0, Math.min(1, volume));
         
         if (this.gainNode) {
-            // Use exponential ramp for smooth volume changes
             this.gainNode.gain.setTargetAtTime(
                 this.volume,
                 this.audioContext.currentTime,
@@ -295,41 +226,22 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Get current volume
-     * @returns {number} Current volume (0.0 to 1.0)
-     */
     getVolume() {
         return this.volume;
     }
     
-    /**
-     * Check if audio is currently playing
-     * @returns {boolean} True if playing
-     */
     getIsPlaying() {
         return this.isPlaying;
     }
     
-    /**
-     * Check if audio is paused
-     * @returns {boolean} True if paused
-     */
     getIsPaused() {
         return this.isPaused;
     }
     
-    /**
-     * Check if audio is loaded and ready
-     * @returns {boolean} True if audio is loaded
-     */
     isReady() {
         return this.audioBuffer !== null;
     }
     
-    /**
-     * Handle audio playback end
-     */
     handleEnded() {
         this.isPlaying = false;
         this.isPaused = false;
@@ -343,7 +255,6 @@ export class AudioPlayer {
         
         console.log('Audio playback ended');
         
-        // Call the callback if provided
         if (this.onEndedCallback && typeof this.onEndedCallback === 'function') {
             try {
                 this.onEndedCallback();
@@ -353,42 +264,27 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Get audio context state
-     * @returns {string} Audio context state
-     */
     getContextState() {
         return this.audioContext ? this.audioContext.state : 'closed';
     }
     
-    /**
-     * Get audio context sample rate
-     * @returns {number} Sample rate in Hz
-     */
     getSampleRate() {
         return this.audioContext ? this.audioContext.sampleRate : 0;
     }
     
-    /**
-     * Cleanup resources
-     */
     cleanup() {
         try {
-            // Stop any playing audio
             this.stop();
             
-            // Disconnect gain node
             if (this.gainNode) {
                 this.gainNode.disconnect();
                 this.gainNode = null;
             }
             
-            // Close audio context
             if (this.audioContext && this.audioContext.state !== 'closed') {
                 this.audioContext.close();
             }
             
-            // Clear references
             this.audioContext = null;
             this.audioBuffer = null;
             this.onEndedCallback = null;
@@ -400,10 +296,6 @@ export class AudioPlayer {
         }
     }
     
-    /**
-     * Create an audio analyser node for visualization
-     * @returns {AnalyserNode} Web Audio API analyser node
-     */
     createAnalyser() {
         if (!this.audioContext) {
             throw new Error('Audio context not initialized');
@@ -412,11 +304,112 @@ export class AudioPlayer {
         const analyser = this.audioContext.createAnalyser();
         analyser.fftSize = 256;
         
-        // Connect to the audio graph
         if (this.gainNode) {
             this.gainNode.connect(analyser);
         }
         
         return analyser;
+    }
+    
+    applyAudioEffects(effects = {}) {
+        if (!this.audioContext || !this.sourceNode) {
+            console.warn('Cannot apply effects: audio context or source not available');
+            return;
+        }
+        
+        try {
+            if (effects.reverb) {
+                const convolver = this.audioContext.createConvolver();
+                // Create impulse response for reverb
+                const impulseLength = this.audioContext.sampleRate * 2;
+                const impulse = this.audioContext.createBuffer(2, impulseLength, this.audioContext.sampleRate);
+                
+                for (let channel = 0; channel < 2; channel++) {
+                    const channelData = impulse.getChannelData(channel);
+                    for (let i = 0; i < impulseLength; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / impulseLength, 2);
+                    }
+                }
+                
+                convolver.buffer = impulse;
+                this.sourceNode.connect(convolver);
+                convolver.connect(this.gainNode);
+            }
+            
+            if (effects.lowpass) {
+                const filter = this.audioContext.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = effects.lowpass.frequency || 1000;
+                filter.Q.value = effects.lowpass.Q || 1;
+                
+                this.sourceNode.connect(filter);
+                filter.connect(this.gainNode);
+            }
+            
+            if (effects.highpass) {
+                const filter = this.audioContext.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = effects.highpass.frequency || 200;
+                filter.Q.value = effects.highpass.Q || 1;
+                
+                this.sourceNode.connect(filter);
+                filter.connect(this.gainNode);
+            }
+            
+            if (effects.distortion) {
+                const waveshaper = this.audioContext.createWaveShaper();
+                const amount = effects.distortion.amount || 50;
+                const samples = 44100;
+                const curve = new Float32Array(samples);
+                const deg = Math.PI / 180;
+                
+                for (let i = 0; i < samples; i++) {
+                    const x = (i * 2) / samples - 1;
+                    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+                }
+                
+                waveshaper.curve = curve;
+                waveshaper.oversample = '4x';
+                
+                this.sourceNode.connect(waveshaper);
+                waveshaper.connect(this.gainNode);
+            }
+            
+            console.log('Audio effects applied:', Object.keys(effects));
+            
+        } catch (error) {
+            console.error('Failed to apply audio effects:', error);
+        }
+    }
+    
+    getAudioData() {
+        if (!this.audioBuffer) {
+            return null;
+        }
+        
+        const channelData = [];
+        for (let channel = 0; channel < this.audioBuffer.numberOfChannels; channel++) {
+            channelData.push(this.audioBuffer.getChannelData(channel));
+        }
+        
+        return {
+            duration: this.audioBuffer.duration,
+            sampleRate: this.audioBuffer.sampleRate,
+            numberOfChannels: this.audioBuffer.numberOfChannels,
+            length: this.audioBuffer.length,
+            channelData: channelData
+        };
+    }
+    
+    getPlaybackInfo() {
+        return {
+            isPlaying: this.isPlaying,
+            isPaused: this.isPaused,
+            currentTime: this.getCurrentTimeSeconds(),
+            duration: this.getDurationSeconds(),
+            volume: this.volume,
+            sampleRate: this.getSampleRate(),
+            contextState: this.getContextState()
+        };
     }
 }

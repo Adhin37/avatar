@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enhanced Local Talking Avatar</title>
+    <title>Local Talking Avatar</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/enhanced-style.css">
 </head>
 <body>
     <div class="header">
-        <h1>🎭 Enhanced Local Talking Avatar</h1>
+        <h1>🎭 Local Talking Avatar</h1>
         <p>Realistic 3D avatar with advanced facial expressions and emotion system</p>
         <div class="feature-badges">
             <span class="badge">🎨 Facial Expressions</span>
@@ -24,7 +24,7 @@
             <canvas id="avatar-canvas"></canvas>
             <div id="loading-overlay" class="loading-overlay">
                 <div class="loading-spinner"></div>
-                <div id="loading-text">Loading enhanced avatar...</div>
+                <div id="loading-text">Loading avatar...</div>
             </div>
             
             <!-- Avatar info overlay -->
@@ -83,7 +83,7 @@
                     id="text-input" 
                     placeholder="Type your message here... Try different emotions and contexts!"
                     maxlength="1000"
-                >Hello! I am your enhanced talking avatar with realistic facial expressions. I can show emotions, track your mouse with my eyes, and respond to different contexts. Try saying something happy, sad, or asking a question!</textarea>
+                >Hello! I am your talking avatar with realistic facial expressions. I can show emotions, track your mouse with my eyes, and respond to different contexts. Try saying something happy, sad, or asking a question!</textarea>
                 <div class="character-counter">
                     <span id="char-count">0</span>/1000 characters
                 </div>
@@ -233,7 +233,7 @@
 
     <div class="status-bar">
         <div class="status-content">
-            <span id="status-text" class="status-connecting">Initializing enhanced avatar system...</span>
+            <span id="status-text" class="status-connecting">Initializing avatar system...</span>
             <div class="status-indicators">
                 <span id="tts-status" class="status-indicator">TTS: ⏳</span>
                 <span id="avatar-status" class="status-indicator">Avatar: ⏳</span>
@@ -249,31 +249,25 @@
 
     <!-- Application modules -->
     <script type="module">
-        import { EnhancedApp } from './js/EnhancedApp.js';
+        import { App } from './js/App.js';
         import { EmotionAnalyzer } from './js/EmotionAnalyzer.js';
         
-        // Global application instance
         let app;
         let emotionAnalyzer;
         
-        // Initialize the application when the page loads
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                // Initialize emotion analyzer
                 emotionAnalyzer = new EmotionAnalyzer();
                 
-                // Initialize enhanced application
-                app = new EnhancedApp();
+                app = new App();
                 await app.initialize();
                 
-                // Setup additional event listeners
-                setupAdditionalEventListeners();
+                setupDebugPanel();
                 
-                // Store global reference for cleanup
-                window.enhancedApp = app;
+                window.app = app;
                 window.emotionAnalyzer = emotionAnalyzer;
                 
-                console.log('Enhanced Avatar Application initialized successfully!');
+                console.log('Avatar Application initialized successfully!');
                 
             } catch (error) {
                 console.error('Failed to initialize application:', error);
@@ -282,102 +276,11 @@
             }
         });
         
-        /**
-         * Setup additional event listeners for enhanced features
-         */
-        function setupAdditionalEventListeners() {
-            // Character counter
-            const textInput = document.getElementById('text-input');
-            const charCount = document.getElementById('char-count');
-            
-            textInput.addEventListener('input', () => {
-                const count = textInput.value.length;
-                charCount.textContent = count;
-                
-                if (count > 900) {
-                    charCount.style.color = '#f44336';
-                } else if (count > 700) {
-                    charCount.style.color = '#ff9800';
-                } else {
-                    charCount.style.color = '';
-                }
-            });
-            
-            // Preset message buttons
-            document.querySelectorAll('.preset-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const text = btn.getAttribute('data-text');
-                    const context = btn.getAttribute('data-context');
-                    
-                    textInput.value = text;
-                    
-                    if (context) {
-                        const contextSelector = document.getElementById('context-selector');
-                        contextSelector.value = context;
-                        contextSelector.dispatchEvent(new Event('change'));
-                    }
-                    
-                    // Update character counter
-                    charCount.textContent = text.length;
-                    
-                    // Auto-speak if not currently speaking
-                    if (!app.isSpeaking) {
-                        setTimeout(() => {
-                            document.getElementById('speak-btn').click();
-                        }, 500);
-                    }
-                });
-            });
-            
-            // Debug mode toggle
-            const debugToggle = document.getElementById('debug-mode-toggle');
-            const debugPanel = document.getElementById('expression-debug');
-            
-            debugToggle.addEventListener('change', (e) => {
-                debugPanel.style.display = e.target.checked ? 'block' : 'none';
-                
-                if (e.target.checked) {
-                    startExpressionDebugUpdates();
-                }
-            });
-            
-            // Auto emotion toggle
-            const autoEmotionToggle = document.getElementById('auto-emotion-toggle');
-            autoEmotionToggle.addEventListener('change', (e) => {
-                if (app && app.emotionSystem) {
-                    app.emotionSystem.autoDetect = e.target.checked;
-                }
-            });
-            
-            // Keyboard shortcuts
-            document.addEventListener('keydown', (e) => {
-                // Ctrl+Shift+E for emotion panel toggle
-                if (e.ctrlKey && e.shiftKey && e.key === 'E') {
-                    debugToggle.checked = !debugToggle.checked;
-                    debugToggle.dispatchEvent(new Event('change'));
-                }
-                
-                // Number keys for quick emotions (1-6)
-                if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.altKey) {
-                    const emotions = ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fearful'];
-                    const emotionIndex = parseInt(e.key) - 1;
-                    
-                    if (emotionIndex < emotions.length) {
-                        const emotionBtn = document.querySelector(`[data-emotion="${emotions[emotionIndex]}"]`);
-                        if (emotionBtn) {
-                            emotionBtn.click();
-                        }
-                    }
-                }
-            });
-        }
-        
-        /**
-         * Start debug panel updates
-         */
-        function startExpressionDebugUpdates() {
+        function setupDebugPanel() {
             function updateDebugPanel() {
-                if (!document.getElementById('debug-mode-toggle').checked) {
+                const debugToggle = document.getElementById('debug-mode-toggle');
+                if (!debugToggle || !debugToggle.checked) {
+                    requestAnimationFrame(updateDebugPanel);
                     return;
                 }
                 
@@ -395,18 +298,16 @@
                             barFill.style.width = `${percentage}%`;
                             barValue.textContent = `${percentage}%`;
                             
-                            // Color coding
                             if (percentage > 70) {
-                                barFill.style.backgroundColor = '#4caf50'; // Green
+                                barFill.style.backgroundColor = '#4caf50';
                             } else if (percentage > 30) {
-                                barFill.style.backgroundColor = '#ff9800'; // Orange
+                                barFill.style.backgroundColor = '#ff9800';
                             } else {
-                                barFill.style.backgroundColor = '#2196f3'; // Blue
+                                barFill.style.backgroundColor = '#2196f3';
                             }
                         }
                     });
                     
-                    // Update emotion and context indicators
                     const currentEmotionEl = document.getElementById('current-emotion');
                     const currentContextEl = document.getElementById('current-context');
                     
@@ -419,14 +320,12 @@
                     }
                 }
                 
-                // Continue updating
                 requestAnimationFrame(updateDebugPanel);
             }
             
             updateDebugPanel();
         }
         
-        // Utility functions for external access
         window.setEmotion = (emotion, intensity = 0.8) => {
             if (app && app.avatarController) {
                 app.triggerEmotion(emotion, intensity);
@@ -444,6 +343,25 @@
                 return emotionAnalyzer.analyze(text);
             }
             return null;
+        };
+        
+        window.getSystemStatus = () => {
+            if (app) {
+                return app.getSystemStatus();
+            }
+            return null;
+        };
+        
+        window.triggerBlink = () => {
+            if (app && app.avatarController) {
+                app.avatarController.blink();
+            }
+        };
+        
+        window.setEyeDirection = (x, y) => {
+            if (app && app.avatarController) {
+                app.avatarController.setEyeLookDirection(x, y);
+            }
         };
     </script>
 </body>

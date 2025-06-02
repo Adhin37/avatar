@@ -4,11 +4,7 @@
  */
 
 export class EmotionAnalyzer {
-    /**
-     * Initialize the Emotion Analyzer
-     */
     constructor() {
-        // Emotion keyword dictionaries
         this.emotionKeywords = {
             happy: {
                 primary: ['happy', 'joy', 'joyful', 'glad', 'pleased', 'delighted', 'cheerful', 'elated', 'ecstatic', 'blissful'],
@@ -42,7 +38,6 @@ export class EmotionAnalyzer {
             }
         };
         
-        // Context keywords for better emotion detection
         this.contextKeywords = {
             greeting: ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'welcome', 'greetings'],
             farewell: ['goodbye', 'bye', 'see you', 'farewell', 'take care', 'until next time', 'see you later'],
@@ -51,17 +46,14 @@ export class EmotionAnalyzer {
             gratitude: ['thank', 'thanks', 'grateful', 'appreciate', 'thankful', 'much obliged']
         };
         
-        // Intensity modifiers
         this.intensityModifiers = {
             high: ['very', 'extremely', 'incredibly', 'absolutely', 'completely', 'totally', 'utterly', 'so', 'really'],
             medium: ['quite', 'pretty', 'fairly', 'rather', 'somewhat', 'moderately'],
             low: ['a bit', 'slightly', 'kind of', 'sort of', 'a little', 'mildly']
         };
         
-        // Negation words
         this.negationWords = ['not', 'no', 'never', 'none', 'nobody', 'nothing', 'neither', 'nowhere', 'hardly', 'scarcely', 'barely'];
         
-        // Punctuation emotion indicators
         this.punctuationEmotions = {
             '!': { emotion: 'surprised', intensity: 0.3 },
             '!!!': { emotion: 'surprised', intensity: 0.8 },
@@ -76,11 +68,6 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Analyze text for emotional content
-     * @param {string} text - Text to analyze
-     * @returns {Object} Analysis result with detected emotions
-     */
     analyze(text) {
         if (!text || typeof text !== 'string') {
             return this.createEmptyResult();
@@ -89,22 +76,11 @@ export class EmotionAnalyzer {
         const cleanText = this.preprocessText(text);
         const words = this.tokenize(cleanText);
         
-        // Detect emotions
         const emotions = this.detectEmotions(words, cleanText);
-        
-        // Detect context
         const context = this.detectContext(words, cleanText);
-        
-        // Analyze punctuation
         const punctuationAnalysis = this.analyzePunctuation(text);
-        
-        // Calculate overall sentiment
         const sentiment = this.calculateSentiment(emotions);
-        
-        // Determine primary emotion
         const primaryEmotion = this.determinePrimaryEmotion(emotions, punctuationAnalysis);
-        
-        // Calculate confidence
         const confidence = this.calculateConfidence(emotions, context, punctuationAnalysis);
         
         return {
@@ -120,34 +96,18 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Preprocess text for analysis
-     * @param {string} text - Raw text
-     * @returns {string} Cleaned text
-     */
     preprocessText(text) {
         return text
             .toLowerCase()
-            .replace(/[^\w\s!?.:;,'"()-]/g, ' ') // Keep basic punctuation
+            .replace(/[^\w\s!?.:;,'"()-]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
     }
     
-    /**
-     * Tokenize text into words
-     * @param {string} text - Preprocessed text
-     * @returns {Array} Array of words
-     */
     tokenize(text) {
         return text.split(/\s+/).filter(word => word.length > 0);
     }
     
-    /**
-     * Detect emotions in the text
-     * @param {Array} words - Tokenized words
-     * @param {string} fullText - Full text for phrase matching
-     * @returns {Object} Detected emotions with scores
-     */
     detectEmotions(words, fullText) {
         const emotions = {
             happy: 0,
@@ -158,25 +118,21 @@ export class EmotionAnalyzer {
             disgusted: 0
         };
         
-        // Check each emotion category
         Object.keys(this.emotionKeywords).forEach(emotion => {
             const keywords = this.emotionKeywords[emotion];
             
-            // Primary keywords (highest weight)
             keywords.primary.forEach(keyword => {
                 if (fullText.includes(keyword)) {
                     emotions[emotion] += 1.0;
                 }
             });
             
-            // Secondary keywords (medium weight)
             keywords.secondary.forEach(keyword => {
                 if (fullText.includes(keyword)) {
                     emotions[emotion] += 0.7;
                 }
             });
             
-            // Tertiary keywords (lower weight)
             keywords.tertiary.forEach(keyword => {
                 if (fullText.includes(keyword)) {
                     emotions[emotion] += 0.4;
@@ -184,24 +140,13 @@ export class EmotionAnalyzer {
             });
         });
         
-        // Apply intensity modifiers
         this.applyIntensityModifiers(emotions, words, fullText);
-        
-        // Apply negation
         this.applyNegation(emotions, words, fullText);
-        
-        // Normalize scores
         this.normalizeScores(emotions);
         
         return emotions;
     }
     
-    /**
-     * Apply intensity modifiers to emotion scores
-     * @param {Object} emotions - Current emotion scores
-     * @param {Array} words - Tokenized words
-     * @param {string} fullText - Full text
-     */
     applyIntensityModifiers(emotions, words, fullText) {
         Object.keys(this.intensityModifiers).forEach(level => {
             const modifiers = this.intensityModifiers[level];
@@ -219,14 +164,7 @@ export class EmotionAnalyzer {
         });
     }
     
-    /**
-     * Apply negation to emotion scores
-     * @param {Object} emotions - Current emotion scores
-     * @param {Array} words - Tokenized words
-     * @param {string} fullText - Full text
-     */
     applyNegation(emotions, words, fullText) {
-        // Simple negation detection
         let negationFound = false;
         
         this.negationWords.forEach(negWord => {
@@ -236,13 +174,11 @@ export class EmotionAnalyzer {
         });
         
         if (negationFound) {
-            // Reduce positive emotions, potentially increase negative ones
             if (emotions.happy > 0) {
                 emotions.sad += emotions.happy * 0.5;
                 emotions.happy *= 0.3;
             }
             
-            // Reduce certainty for other emotions
             Object.keys(emotions).forEach(emotion => {
                 if (emotion !== 'sad' && emotions[emotion] > 0) {
                     emotions[emotion] *= 0.7;
@@ -251,10 +187,6 @@ export class EmotionAnalyzer {
         }
     }
     
-    /**
-     * Normalize emotion scores
-     * @param {Object} emotions - Emotion scores to normalize
-     */
     normalizeScores(emotions) {
         const maxScore = Math.max(...Object.values(emotions));
         
@@ -265,12 +197,6 @@ export class EmotionAnalyzer {
         }
     }
     
-    /**
-     * Detect context from text
-     * @param {Array} words - Tokenized words
-     * @param {string} fullText - Full text
-     * @returns {string} Detected context
-     */
     detectContext(words, fullText) {
         let maxScore = 0;
         let detectedContext = 'neutral';
@@ -291,7 +217,6 @@ export class EmotionAnalyzer {
             }
         });
         
-        // Special cases
         if (fullText.includes('?')) {
             detectedContext = 'question';
         }
@@ -307,11 +232,6 @@ export class EmotionAnalyzer {
         return detectedContext;
     }
     
-    /**
-     * Analyze punctuation for emotional indicators
-     * @param {string} text - Original text with punctuation
-     * @returns {Object} Punctuation analysis
-     */
     analyzePunctuation(text) {
         const analysis = {
             exclamationCount: 0,
@@ -320,11 +240,9 @@ export class EmotionAnalyzer {
             detectedEmotions: []
         };
         
-        // Count punctuation
         analysis.exclamationCount = (text.match(/!/g) || []).length;
         analysis.questionCount = (text.match(/\?/g) || []).length;
         
-        // Detect emoticons and punctuation patterns
         Object.keys(this.punctuationEmotions).forEach(pattern => {
             if (text.includes(pattern)) {
                 analysis.emoticons.push(pattern);
@@ -335,11 +253,6 @@ export class EmotionAnalyzer {
         return analysis;
     }
     
-    /**
-     * Calculate overall sentiment
-     * @param {Object} emotions - Emotion scores
-     * @returns {Object} Sentiment analysis
-     */
     calculateSentiment(emotions) {
         const positive = emotions.happy;
         const negative = emotions.sad + emotions.angry + emotions.fearful + emotions.disgusted;
@@ -365,17 +278,10 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Determine the primary emotion
-     * @param {Object} emotions - Emotion scores
-     * @param {Object} punctuationAnalysis - Punctuation analysis
-     * @returns {Object} Primary emotion and intensity
-     */
     determinePrimaryEmotion(emotions, punctuationAnalysis) {
         let primaryEmotion = 'neutral';
         let maxScore = 0;
         
-        // Find emotion with highest score
         Object.keys(emotions).forEach(emotion => {
             if (emotions[emotion] > maxScore) {
                 maxScore = emotions[emotion];
@@ -383,7 +289,6 @@ export class EmotionAnalyzer {
             }
         });
         
-        // Consider punctuation emotions
         punctuationAnalysis.detectedEmotions.forEach(puncEmotion => {
             if (puncEmotion.intensity > maxScore) {
                 maxScore = puncEmotion.intensity;
@@ -391,15 +296,12 @@ export class EmotionAnalyzer {
             }
         });
         
-        // Calculate intensity
         let intensity = maxScore;
         
-        // Boost intensity based on punctuation
         if (punctuationAnalysis.exclamationCount > 0) {
             intensity = Math.min(intensity + (punctuationAnalysis.exclamationCount * 0.2), 1.0);
         }
         
-        // Ensure minimum threshold
         if (intensity < 0.1) {
             primaryEmotion = 'neutral';
             intensity = 0.5;
@@ -411,31 +313,20 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Calculate confidence in the analysis
-     * @param {Object} emotions - Emotion scores
-     * @param {string} context - Detected context
-     * @param {Object} punctuationAnalysis - Punctuation analysis
-     * @returns {number} Confidence score (0-1)
-     */
     calculateConfidence(emotions, context, punctuationAnalysis) {
         let confidence = 0;
         
-        // Base confidence on emotion scores
         const maxEmotion = Math.max(...Object.values(emotions));
         confidence += maxEmotion * 0.5;
         
-        // Boost confidence if context is detected
         if (context !== 'neutral') {
             confidence += 0.2;
         }
         
-        // Boost confidence if punctuation emotions are found
         if (punctuationAnalysis.emoticons.length > 0) {
             confidence += 0.3;
         }
         
-        // Boost confidence if strong punctuation is present
         if (punctuationAnalysis.exclamationCount > 0 || punctuationAnalysis.questionCount > 0) {
             confidence += 0.1;
         }
@@ -443,10 +334,6 @@ export class EmotionAnalyzer {
         return Math.min(confidence, 1.0);
     }
     
-    /**
-     * Create empty analysis result
-     * @returns {Object} Empty result
-     */
     createEmptyResult() {
         return {
             text: '',
@@ -479,20 +366,10 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Analyze a batch of texts
-     * @param {Array} texts - Array of texts to analyze
-     * @returns {Array} Array of analysis results
-     */
     analyzeBatch(texts) {
         return texts.map(text => this.analyze(text));
     }
     
-    /**
-     * Get emotion suggestions based on context
-     * @param {string} context - Context string
-     * @returns {Array} Suggested emotions
-     */
     getEmotionSuggestions(context) {
         const suggestions = {
             greeting: ['happy', 'neutral'],
@@ -507,11 +384,6 @@ export class EmotionAnalyzer {
         return suggestions[context] || ['neutral'];
     }
     
-    /**
-     * Train or update emotion keywords (for future enhancement)
-     * @param {string} emotion - Emotion category
-     * @param {Array} keywords - New keywords to add
-     */
     addEmotionKeywords(emotion, keywords) {
         if (this.emotionKeywords[emotion]) {
             if (!this.emotionKeywords[emotion].custom) {
@@ -521,11 +393,6 @@ export class EmotionAnalyzer {
         }
     }
     
-    /**
-     * Get analysis statistics
-     * @param {Array} analyses - Array of previous analyses
-     * @returns {Object} Statistics
-     */
     getStatistics(analyses) {
         if (!analyses || analyses.length === 0) {
             return {};
@@ -539,23 +406,19 @@ export class EmotionAnalyzer {
             sentimentDistribution: { positive: 0, negative: 0, neutral: 0 }
         };
         
-        // Calculate distributions
         analyses.forEach(analysis => {
             stats.averageConfidence += analysis.confidence;
             
-            // Emotion distribution
             if (!stats.emotionDistribution[analysis.primaryEmotion]) {
                 stats.emotionDistribution[analysis.primaryEmotion] = 0;
             }
             stats.emotionDistribution[analysis.primaryEmotion]++;
             
-            // Context distribution
             if (!stats.contextDistribution[analysis.context]) {
                 stats.contextDistribution[analysis.context] = 0;
             }
             stats.contextDistribution[analysis.context]++;
             
-            // Sentiment distribution
             stats.sentimentDistribution[analysis.sentiment.sentiment]++;
         });
         
@@ -564,10 +427,6 @@ export class EmotionAnalyzer {
         return stats;
     }
     
-    /**
-     * Export configuration for backup/sharing
-     * @returns {Object} Configuration object
-     */
     exportConfig() {
         return {
             emotionKeywords: this.emotionKeywords,
@@ -580,10 +439,6 @@ export class EmotionAnalyzer {
         };
     }
     
-    /**
-     * Import configuration
-     * @param {Object} config - Configuration object
-     */
     importConfig(config) {
         if (config.emotionKeywords) {
             this.emotionKeywords = { ...this.emotionKeywords, ...config.emotionKeywords };

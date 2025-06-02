@@ -1,57 +1,59 @@
 /**
  * Lip Sync Controller
  * Synchronizes avatar mouth movements with audio playback based on phoneme timing
+ * Integrates with advanced facial expression system
  */
 
 export class LipSyncController {
-    /**
-     * Initialize the Lip Sync Controller
-     * @param {AvatarController} avatarController - Avatar controller instance
-     * @param {AudioPlayer} audioPlayer - Audio player instance
-     */
     constructor(avatarController, audioPlayer) {
         this.avatarController = avatarController;
         this.audioPlayer = audioPlayer;
         
-        // Timing data
         this.phonemeTimings = [];
         this.currentTimingIndex = 0;
         this.phonemeMap = {};
         
-        // Animation state
         this.isActive = false;
         this.animationId = null;
         this.lastUpdateTime = 0;
         
-        // Synchronization settings
-        this.syncUpdateInterval = 16; // ~60 FPS (16ms)
-        this.lookAheadTime = 50; // Look ahead 50ms for smoother transitions
-        this.blendDuration = 100; // Blend between visemes over 100ms
+        this.syncUpdateInterval = 16;
+        this.lookAheadTime = 50;
+        this.blendDuration = 100;
+        this.expressionInfluence = 0.3;
         
-        // Current viseme state
-        this.currentViseme = 13; // Start with neutral/silence
+        this.currentViseme = 13;
         this.targetViseme = 13;
         this.visemeTransitionStart = 0;
         this.visemeBlendProgress = 1.0;
         
-        // Bind methods
+        this.emotionalModulation = {
+            enabled: true,
+            intensity: 0.2,
+            currentEmotion: 'neutral'
+        };
+        
+        this.adaptiveSync = {
+            enabled: true,
+            confidenceThreshold: 0.7,
+            adaptiveBlending: true,
+            performanceMode: 'balanced'
+        };
+        
         this.update = this.update.bind(this);
     }
     
-    /**
-     * Initialize the lip sync controller
-     * @param {TTSController} ttsController - TTS controller to get phoneme mapping
-     * @returns {Promise<void>}
-     */
     async initialize(ttsController) {
         try {
-            // Get phoneme to viseme mapping
             if (ttsController) {
                 await ttsController.loadPhonemeMap();
                 this.phonemeMap = ttsController.getPhonemeMap();
             } else {
                 this.phonemeMap = this.getDefaultPhonemeMap();
             }
+            
+            this.setupVisemeBlending();
+            this.initializeAdaptiveFeatures();
             
             console.log('Lip Sync Controller initialized with phoneme map:', 
                 Object.keys(this.phonemeMap).length, 'phonemes');
@@ -62,40 +64,57 @@ export class LipSyncController {
         }
     }
     
-    /**
-     * Get default phoneme to viseme mapping
-     * @returns {Object} Default phoneme mapping
-     */
+    setupVisemeBlending() {
+        this.visemeBlendWeights = new Array(14).fill(0);
+        this.targetVisemeWeights = new Array(14).fill(0);
+        this.visemeCoarticulation = {
+            enabled: true,
+            strength: 0.3,
+            windowSize: 3
+        };
+    }
+    
+    initializeAdaptiveFeatures() {
+        this.adaptiveSync.performanceMetrics = {
+            frameRate: 60,
+            processingTime: 0,
+            syncAccuracy: 1.0
+        };
+        
+        this.emotionalInfluenceMap = {
+            happy: { intensity: 1.2, openness: 1.1, roundness: 0.9 },
+            sad: { intensity: 0.8, openness: 0.9, roundness: 1.1 },
+            angry: { intensity: 1.3, openness: 0.8, roundness: 0.8 },
+            surprised: { intensity: 1.4, openness: 1.3, roundness: 1.2 },
+            fearful: { intensity: 0.9, openness: 1.1, roundness: 1.0 },
+            disgusted: { intensity: 0.7, openness: 0.7, roundness: 0.8 },
+            neutral: { intensity: 1.0, openness: 1.0, roundness: 1.0 }
+        };
+    }
+    
     getDefaultPhonemeMap() {
         return {
-            // Vowels - open mouth shapes
             'AH': 0, 'AA': 0, 'AO': 1, 'AW': 1, 'AY': 0,
             'EH': 2, 'ER': 2, 'EY': 2, 'IH': 3, 'IY': 3,
             'OW': 1, 'OY': 1, 'UH': 4, 'UW': 4,
             
-            // Consonants - various mouth shapes
-            'B': 5, 'P': 5, 'M': 5,  // Bilabial (lips together)
-            'F': 6, 'V': 6,          // Labiodental (teeth on lip)
-            'TH': 7, 'DH': 7,        // Dental (tongue between teeth)
-            'T': 8, 'D': 8, 'N': 8, 'L': 8, 'R': 8,  // Alveolar
-            'S': 9, 'Z': 9,          // Sibilants
-            'SH': 10, 'ZH': 10, 'CH': 10, 'JH': 10,  // Post-alveolar
-            'K': 11, 'G': 11, 'NG': 11,  // Velar
-            'HH': 12, 'Y': 12, 'W': 12,  // Glottal/approximants
-            'SIL': 13  // Silence/neutral
+            'B': 5, 'P': 5, 'M': 5,
+            'F': 6, 'V': 6,
+            'TH': 7, 'DH': 7,
+            'T': 8, 'D': 8, 'N': 8, 'L': 8, 'R': 8,
+            'S': 9, 'Z': 9,
+            'SH': 10, 'ZH': 10, 'CH': 10, 'JH': 10,
+            'K': 11, 'G': 11, 'NG': 11,
+            'HH': 12, 'Y': 12, 'W': 12,
+            'SIL': 13
         };
     }
     
-    /**
-     * Load phoneme timing data
-     * @param {Array} timings - Array of phoneme timing objects
-     */
     loadTimings(timings) {
         if (!Array.isArray(timings)) {
             throw new Error('Timings must be an array');
         }
         
-        // Process and validate timing data
         this.phonemeTimings = timings.map((timing, index) => {
             const processed = {
                 phoneme: timing.phoneme || 'SIL',
@@ -105,37 +124,56 @@ export class LipSyncController {
                 start_ms: timing.start_ms || 0,
                 end_ms: timing.end_ms || 0,
                 duration_ms: timing.duration_ms || (timing.end_ms - timing.start_ms),
+                confidence: timing.confidence || 1.0,
                 index: index
             };
             
-            // Validate timing values
             if (processed.end_ms <= processed.start_ms) {
                 console.warn(`Invalid timing at index ${index}:`, processed);
-                processed.end_ms = processed.start_ms + 50; // Minimum 50ms duration
+                processed.end_ms = processed.start_ms + 50;
             }
             
             return processed;
         });
         
-        // Sort by start time to ensure correct order
         this.phonemeTimings.sort((a, b) => a.start_ms - b.start_ms);
         
-        // Reset state
+        if (this.visemeCoarticulation.enabled) {
+            this.applyCoarticulation();
+        }
+        
         this.currentTimingIndex = 0;
         this.currentViseme = 13;
         this.targetViseme = 13;
         
         console.log('Loaded', this.phonemeTimings.length, 'phoneme timings for lip sync');
         
-        // Log first few timings for debugging
         if (this.phonemeTimings.length > 0) {
             console.log('First 5 timings:', this.phonemeTimings.slice(0, 5));
         }
     }
     
-    /**
-     * Start the lip sync animation
-     */
+    applyCoarticulation() {
+        const windowSize = this.visemeCoarticulation.windowSize;
+        const strength = this.visemeCoarticulation.strength;
+        
+        for (let i = 0; i < this.phonemeTimings.length; i++) {
+            const current = this.phonemeTimings[i];
+            const neighbors = [];
+            
+            for (let j = Math.max(0, i - windowSize); j <= Math.min(this.phonemeTimings.length - 1, i + windowSize); j++) {
+                if (j !== i) {
+                    neighbors.push(this.phonemeTimings[j]);
+                }
+            }
+            
+            current.coarticulation = neighbors.map(neighbor => ({
+                viseme_index: neighbor.viseme_index,
+                influence: strength * Math.exp(-Math.abs(neighbor.start_ms - current.start_ms) / 100)
+            }));
+        }
+    }
+    
     start() {
         if (this.isActive) {
             console.warn('Lip sync already active');
@@ -154,16 +192,36 @@ export class LipSyncController {
         this.isActive = true;
         this.lastUpdateTime = performance.now();
         this.currentTimingIndex = 0;
-        this.currentViseme = 13; // Start with neutral
+        this.currentViseme = 13;
         this.targetViseme = 13;
         
-        console.log('Lip sync started');
+        this.resetVisemeWeights();
+        
+        if (this.avatarController.getExpressionStates) {
+            const expressions = this.avatarController.getExpressionStates();
+            this.updateEmotionalContext(expressions);
+        }
+        
+        console.log('Lip sync started with advanced features');
         this.scheduleUpdate();
     }
     
-    /**
-     * Stop the lip sync animation
-     */
+    updateEmotionalContext(expressions) {
+        let dominantEmotion = 'neutral';
+        let maxIntensity = 0;
+        
+        const emotions = ['happy', 'sad', 'angry', 'surprised', 'fearful', 'disgusted'];
+        emotions.forEach(emotion => {
+            if (expressions[emotion] && expressions[emotion] > maxIntensity) {
+                maxIntensity = expressions[emotion];
+                dominantEmotion = emotion;
+            }
+        });
+        
+        this.emotionalModulation.currentEmotion = dominantEmotion;
+        this.emotionalModulation.intensity = maxIntensity;
+    }
+    
     stop() {
         if (!this.isActive) {
             return;
@@ -176,15 +234,11 @@ export class LipSyncController {
             this.animationId = null;
         }
         
-        // Reset to neutral viseme
         this.resetToNeutral();
         
         console.log('Lip sync stopped');
     }
     
-    /**
-     * Schedule the next update frame
-     */
     scheduleUpdate() {
         if (!this.isActive) {
             return;
@@ -193,9 +247,6 @@ export class LipSyncController {
         this.animationId = requestAnimationFrame(this.update);
     }
     
-    /**
-     * Update lip sync animation
-     */
     update() {
         if (!this.isActive) {
             return;
@@ -204,41 +255,37 @@ export class LipSyncController {
         const currentTime = performance.now();
         const deltaTime = currentTime - this.lastUpdateTime;
         
-        // Throttle updates to target framerate
         if (deltaTime >= this.syncUpdateInterval) {
+            const processingStart = performance.now();
+            
             this.updateLipSync();
+            
+            const processingTime = performance.now() - processingStart;
+            this.updatePerformanceMetrics(processingTime, deltaTime);
+            
             this.lastUpdateTime = currentTime;
         }
         
-        // Schedule next frame
         this.scheduleUpdate();
     }
     
-    /**
-     * Update lip sync based on current audio time
-     */
     updateLipSync() {
         try {
-            // Get current audio playback time
             const audioTimeMs = this.audioPlayer.getCurrentTimeMs();
             
-            // Find current and upcoming phonemes
             const currentTiming = this.findCurrentTiming(audioTimeMs);
             const nextTiming = this.findNextTiming(audioTimeMs);
             
-            // Update viseme based on current timing
             this.updateViseme(currentTiming, nextTiming, audioTimeMs);
+            this.updateVisemeBlending();
+            this.applyEmotionalModulation();
+            this.applyToAvatar();
             
         } catch (error) {
             console.error('Error updating lip sync:', error);
         }
     }
     
-    /**
-     * Find the phoneme timing that should be active at the given time
-     * @param {number} timeMs - Current time in milliseconds
-     * @returns {Object|null} Current timing object or null
-     */
     findCurrentTiming(timeMs) {
         for (let i = this.currentTimingIndex; i < this.phonemeTimings.length; i++) {
             const timing = this.phonemeTimings[i];
@@ -248,13 +295,11 @@ export class LipSyncController {
                 return timing;
             }
             
-            // If we've passed this timing, move to the next one
             if (timeMs >= timing.end_ms) {
                 this.currentTimingIndex = i + 1;
             }
         }
         
-        // Check previous timings in case we missed one
         for (let i = Math.max(0, this.currentTimingIndex - 5); i < this.currentTimingIndex; i++) {
             const timing = this.phonemeTimings[i];
             if (timeMs >= timing.start_ms && timeMs < timing.end_ms) {
@@ -266,11 +311,6 @@ export class LipSyncController {
         return null;
     }
     
-    /**
-     * Find the next phoneme timing after the given time
-     * @param {number} timeMs - Current time in milliseconds
-     * @returns {Object|null} Next timing object or null
-     */
     findNextTiming(timeMs) {
         const lookAheadMs = timeMs + this.lookAheadTime;
         
@@ -285,52 +325,41 @@ export class LipSyncController {
         return null;
     }
     
-    /**
-     * Update the current viseme based on timing information
-     * @param {Object|null} currentTiming - Current phoneme timing
-     * @param {Object|null} nextTiming - Next phoneme timing
-     * @param {number} audioTimeMs - Current audio time
-     */
     updateViseme(currentTiming, nextTiming, audioTimeMs) {
-        let targetVisemeIndex = 13; // Default to neutral
+        let targetVisemeIndex = 13;
+        let confidence = 1.0;
         
         if (currentTiming) {
             targetVisemeIndex = currentTiming.viseme_index;
+            confidence = currentTiming.confidence || 1.0;
         } else if (nextTiming && (nextTiming.start_ms - audioTimeMs) <= this.lookAheadTime) {
-            // Pre-shape for upcoming phoneme
             targetVisemeIndex = nextTiming.viseme_index;
+            confidence = nextTiming.confidence || 1.0;
         }
         
-        // Check if we need to transition to a new viseme
         if (this.targetViseme !== targetVisemeIndex) {
-            this.startVisemeTransition(targetVisemeIndex);
+            this.startVisemeTransition(targetVisemeIndex, confidence);
         }
         
-        // Update blend progress
-        this.updateVisemeBlend(audioTimeMs);
+        this.updateVisemeBlendProgress(audioTimeMs);
         
-        // Apply to avatar
-        this.applyVisemeToAvatar();
+        if (this.visemeCoarticulation.enabled && currentTiming && currentTiming.coarticulation) {
+            this.applyCoarticulationEffects(currentTiming.coarticulation);
+        }
     }
     
-    /**
-     * Start a transition to a new viseme
-     * @param {number} newVisemeIndex - Target viseme index
-     */
-    startVisemeTransition(newVisemeIndex) {
+    startVisemeTransition(newVisemeIndex, confidence = 1.0) {
         this.currentViseme = this.targetViseme;
         this.targetViseme = newVisemeIndex;
         this.visemeTransitionStart = performance.now();
         this.visemeBlendProgress = 0.0;
         
-        // console.log(`Transitioning from viseme ${this.currentViseme} to ${this.targetViseme}`);
+        if (this.adaptiveSync.enabled && confidence < this.adaptiveSync.confidenceThreshold) {
+            this.blendDuration *= 1.5;
+        }
     }
     
-    /**
-     * Update viseme blend progress
-     * @param {number} audioTimeMs - Current audio time
-     */
-    updateVisemeBlend(audioTimeMs) {
+    updateVisemeBlendProgress(audioTimeMs) {
         if (this.currentViseme === this.targetViseme) {
             this.visemeBlendProgress = 1.0;
             return;
@@ -339,74 +368,130 @@ export class LipSyncController {
         const elapsedMs = performance.now() - this.visemeTransitionStart;
         this.visemeBlendProgress = Math.min(1.0, elapsedMs / this.blendDuration);
         
-        // Use easing for smoother transitions
         this.visemeBlendProgress = this.easeInOutCubic(this.visemeBlendProgress);
     }
     
-    /**
-     * Apply current viseme state to the avatar
-     */
-    applyVisemeToAvatar() {
-        if (!this.avatarController) {
-            return;
-        }
+    updateVisemeBlending() {
+        this.targetVisemeWeights.fill(0);
         
-        // Reset all viseme weights
-        for (let i = 0; i < 14; i++) {
-            this.avatarController.setViseme(i, 0.0);
-        }
-        
-        // Apply current viseme blend
         if (this.visemeBlendProgress >= 1.0) {
-            // Fully transitioned to target viseme
-            this.avatarController.setViseme(this.targetViseme, 1.0);
+            this.targetVisemeWeights[this.targetViseme] = 1.0;
         } else {
-            // Blend between current and target visemes
             const currentWeight = 1.0 - this.visemeBlendProgress;
             const targetWeight = this.visemeBlendProgress;
             
             if (currentWeight > 0) {
-                this.avatarController.setViseme(this.currentViseme, currentWeight);
+                this.targetVisemeWeights[this.currentViseme] = currentWeight;
             }
             if (targetWeight > 0) {
-                this.avatarController.setViseme(this.targetViseme, targetWeight);
+                this.targetVisemeWeights[this.targetViseme] = targetWeight;
+            }
+        }
+        
+        for (let i = 0; i < this.visemeBlendWeights.length; i++) {
+            const target = this.targetVisemeWeights[i];
+            const current = this.visemeBlendWeights[i];
+            const diff = target - current;
+            
+            this.visemeBlendWeights[i] += diff * 0.15;
+            
+            if (Math.abs(diff) < 0.001) {
+                this.visemeBlendWeights[i] = target;
             }
         }
     }
     
-    /**
-     * Reset avatar to neutral position
-     */
+    applyCoarticulationEffects(coarticulation) {
+        coarticulation.forEach(effect => {
+            const visemeIndex = effect.viseme_index;
+            const influence = effect.influence;
+            
+            if (visemeIndex >= 0 && visemeIndex < this.targetVisemeWeights.length) {
+                this.targetVisemeWeights[visemeIndex] += influence;
+                this.targetVisemeWeights[visemeIndex] = Math.min(1.0, this.targetVisemeWeights[visemeIndex]);
+            }
+        });
+    }
+    
+    applyEmotionalModulation() {
+        if (!this.emotionalModulation.enabled) {
+            return;
+        }
+        
+        const emotion = this.emotionalModulation.currentEmotion;
+        const intensity = this.emotionalModulation.intensity;
+        const influence = this.emotionalInfluenceMap[emotion] || this.emotionalInfluenceMap.neutral;
+        
+        for (let i = 0; i < this.visemeBlendWeights.length; i++) {
+            if (this.visemeBlendWeights[i] > 0) {
+                let modulation = 1.0;
+                
+                if ([0, 1, 2, 3, 4].includes(i)) {
+                    modulation *= influence.openness;
+                }
+                if ([1, 4].includes(i)) {
+                    modulation *= influence.roundness;
+                }
+                
+                modulation *= influence.intensity;
+                
+                const emotionalInfluence = this.expressionInfluence * intensity;
+                this.visemeBlendWeights[i] = this.visemeBlendWeights[i] * (1 - emotionalInfluence) + 
+                                           (this.visemeBlendWeights[i] * modulation) * emotionalInfluence;
+            }
+        }
+    }
+    
+    applyToAvatar() {
+        if (!this.avatarController) {
+            return;
+        }
+        
+        for (let i = 0; i < this.visemeBlendWeights.length; i++) {
+            this.avatarController.setViseme(i, this.visemeBlendWeights[i]);
+        }
+    }
+    
+    resetVisemeWeights() {
+        this.visemeBlendWeights.fill(0);
+        this.targetVisemeWeights.fill(0);
+        this.visemeBlendWeights[13] = 1.0;
+        this.targetVisemeWeights[13] = 1.0;
+    }
+    
     resetToNeutral() {
         if (!this.avatarController) {
             return;
         }
         
-        // Clear all viseme weights
         for (let i = 0; i < 14; i++) {
             this.avatarController.setViseme(i, 0.0);
         }
         
-        // Set neutral viseme
         this.avatarController.setViseme(13, 1.0);
         
         this.currentViseme = 13;
         this.targetViseme = 13;
+        this.resetVisemeWeights();
     }
     
-    /**
-     * Cubic easing function for smooth transitions
-     * @param {number} t - Progress value (0-1)
-     * @returns {number} Eased value (0-1)
-     */
     easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
     
-    /**
-     * Get current lip sync status
-     * @returns {Object} Status information
-     */
+    updatePerformanceMetrics(processingTime, deltaTime) {
+        this.adaptiveSync.performanceMetrics.processingTime = processingTime;
+        this.adaptiveSync.performanceMetrics.frameRate = 1000 / deltaTime;
+        
+        if (this.adaptiveSync.performanceMetrics.frameRate < 30) {
+            this.adaptiveSync.performanceMode = 'performance';
+            this.syncUpdateInterval = 20;
+        } else if (this.adaptiveSync.performanceMetrics.frameRate > 55) {
+            this.adaptiveSync.performanceMode = 'quality';
+            this.syncUpdateInterval = 16;
+        }
+    }
+    
     getStatus() {
         return {
             isActive: this.isActive,
@@ -415,13 +500,13 @@ export class LipSyncController {
             blendProgress: this.visemeBlendProgress,
             currentTimingIndex: this.currentTimingIndex,
             totalTimings: this.phonemeTimings.length,
-            audioTime: this.audioPlayer ? this.audioPlayer.getCurrentTimeMs() : 0
+            audioTime: this.audioPlayer ? this.audioPlayer.getCurrentTimeMs() : 0,
+            emotionalModulation: this.emotionalModulation,
+            performanceMetrics: this.adaptiveSync.performanceMetrics,
+            visemeWeights: [...this.visemeBlendWeights]
         };
     }
     
-    /**
-     * Debug function to log current timing information
-     */
     logCurrentTiming() {
         const audioTimeMs = this.audioPlayer ? this.audioPlayer.getCurrentTimeMs() : 0;
         const currentTiming = this.findCurrentTiming(audioTimeMs);
@@ -433,14 +518,12 @@ export class LipSyncController {
             nextTiming: nextTiming,
             currentViseme: this.currentViseme,
             targetViseme: this.targetViseme,
-            blendProgress: this.visemeBlendProgress
+            blendProgress: this.visemeBlendProgress,
+            emotionalContext: this.emotionalModulation.currentEmotion,
+            performanceMode: this.adaptiveSync.performanceMode
         });
     }
     
-    /**
-     * Set lip sync parameters
-     * @param {Object} params - Parameters to update
-     */
     setParameters(params) {
         if (params.lookAheadTime !== undefined) {
             this.lookAheadTime = Math.max(0, params.lookAheadTime);
@@ -454,16 +537,86 @@ export class LipSyncController {
             this.syncUpdateInterval = Math.max(8, params.syncUpdateInterval);
         }
         
+        if (params.expressionInfluence !== undefined) {
+            this.expressionInfluence = Math.max(0, Math.min(1, params.expressionInfluence));
+        }
+        
+        if (params.emotionalModulation !== undefined) {
+            this.emotionalModulation.enabled = params.emotionalModulation;
+        }
+        
+        if (params.coarticulation !== undefined) {
+            this.visemeCoarticulation.enabled = params.coarticulation;
+        }
+        
+        if (params.adaptiveSync !== undefined) {
+            this.adaptiveSync.enabled = params.adaptiveSync;
+        }
+        
         console.log('Lip sync parameters updated:', {
             lookAheadTime: this.lookAheadTime,
             blendDuration: this.blendDuration,
-            syncUpdateInterval: this.syncUpdateInterval
+            syncUpdateInterval: this.syncUpdateInterval,
+            expressionInfluence: this.expressionInfluence,
+            emotionalModulation: this.emotionalModulation.enabled,
+            coarticulation: this.visemeCoarticulation.enabled,
+            adaptiveSync: this.adaptiveSync.enabled
         });
     }
     
-    /**
-     * Cleanup resources
-     */
+    getAdvancedMetrics() {
+        return {
+            syncAccuracy: this.calculateSyncAccuracy(),
+            emotionalInfluence: this.expressionInfluence,
+            coarticulationStrength: this.visemeCoarticulation.strength,
+            adaptiveFeatures: this.adaptiveSync,
+            visemeDistribution: this.getVisemeDistribution(),
+            performanceProfile: this.getPerformanceProfile()
+        };
+    }
+    
+    calculateSyncAccuracy() {
+        if (!this.phonemeTimings.length || !this.audioPlayer) {
+            return 1.0;
+        }
+        
+        const audioTime = this.audioPlayer.getCurrentTimeMs();
+        const timing = this.findCurrentTiming(audioTime);
+        
+        if (!timing) {
+            return 1.0;
+        }
+        
+        const timingCenter = (timing.start_ms + timing.end_ms) / 2;
+        const offset = Math.abs(audioTime - timingCenter);
+        const maxOffset = (timing.end_ms - timing.start_ms) / 2;
+        
+        return Math.max(0, 1 - (offset / maxOffset));
+    }
+    
+    getVisemeDistribution() {
+        const distribution = new Array(14).fill(0);
+        let total = 0;
+        
+        this.phonemeTimings.forEach(timing => {
+            if (timing.viseme_index >= 0 && timing.viseme_index < 14) {
+                distribution[timing.viseme_index] += timing.duration_ms;
+                total += timing.duration_ms;
+            }
+        });
+        
+        return distribution.map(count => total > 0 ? count / total : 0);
+    }
+    
+    getPerformanceProfile() {
+        return {
+            averageFrameRate: this.adaptiveSync.performanceMetrics.frameRate,
+            averageProcessingTime: this.adaptiveSync.performanceMetrics.processingTime,
+            currentMode: this.adaptiveSync.performanceMode,
+            adaptationsApplied: this.adaptiveSync.enabled ? 'enabled' : 'disabled'
+        };
+    }
+    
     cleanup() {
         this.stop();
         this.phonemeTimings = [];
