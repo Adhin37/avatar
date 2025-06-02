@@ -3,13 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Talking Avatar</title>
+    <title>Enhanced Local Talking Avatar</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/enhanced-style.css">
 </head>
 <body>
     <div class="header">
-        <h1>🗣️ Local Talking Avatar</h1>
-        <p>Fully local neural text-to-speech with realistic lip-sync animation</p>
+        <h1>🎭 Enhanced Local Talking Avatar</h1>
+        <p>Realistic 3D avatar with advanced facial expressions and emotion system</p>
+        <div class="feature-badges">
+            <span class="badge">🎨 Facial Expressions</span>
+            <span class="badge">👁️ Eye Tracking</span>
+            <span class="badge">🎭 Context Awareness</span>
+            <span class="badge">🔄 Idle Animations</span>
+        </div>
     </div>
 
     <div class="main-container">
@@ -17,20 +24,156 @@
             <canvas id="avatar-canvas"></canvas>
             <div id="loading-overlay" class="loading-overlay">
                 <div class="loading-spinner"></div>
-                <div id="loading-text">Loading avatar...</div>
+                <div id="loading-text">Loading enhanced avatar...</div>
+            </div>
+            
+            <!-- Avatar info overlay -->
+            <div class="avatar-info">
+                <div class="emotion-indicator">
+                    <span class="emotion-label">Current Emotion:</span>
+                    <span id="current-emotion" class="emotion-value">Neutral</span>
+                </div>
+                <div class="context-indicator">
+                    <span class="context-label">Context:</span>
+                    <span id="current-context" class="context-value">Neutral</span>
+                </div>
+            </div>
+            
+            <!-- Expression debug panel (hidden by default) -->
+            <div id="expression-debug" class="expression-debug" style="display: none;">
+                <h4>Expression Intensities</h4>
+                <div class="expression-bars">
+                    <div class="expression-bar">
+                        <label>Happy:</label>
+                        <div class="bar-container">
+                            <div class="bar-fill" data-expression="happy"></div>
+                        </div>
+                        <span class="bar-value">0%</span>
+                    </div>
+                    <div class="expression-bar">
+                        <label>Sad:</label>
+                        <div class="bar-container">
+                            <div class="bar-fill" data-expression="sad"></div>
+                        </div>
+                        <span class="bar-value">0%</span>
+                    </div>
+                    <div class="expression-bar">
+                        <label>Surprised:</label>
+                        <div class="bar-container">
+                            <div class="bar-fill" data-expression="surprised"></div>
+                        </div>
+                        <span class="bar-value">0%</span>
+                    </div>
+                    <div class="expression-bar">
+                        <label>Angry:</label>
+                        <div class="bar-container">
+                            <div class="bar-fill" data-expression="angry"></div>
+                        </div>
+                        <span class="bar-value">0%</span>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="controls-section">
+            <!-- Basic text input -->
             <div class="control-group">
                 <label for="text-input">Enter text to speak:</label>
                 <textarea 
                     id="text-input" 
-                    placeholder="Type your message here... (up to 1000 characters)"
+                    placeholder="Type your message here... Try different emotions and contexts!"
                     maxlength="1000"
-                >Hello! I am your local talking avatar. I can speak any text you type with realistic lip synchronization, all running locally on your computer without any internet connection.</textarea>
+                >Hello! I am your enhanced talking avatar with realistic facial expressions. I can show emotions, track your mouse with my eyes, and respond to different contexts. Try saying something happy, sad, or asking a question!</textarea>
+                <div class="character-counter">
+                    <span id="char-count">0</span>/1000 characters
+                </div>
             </div>
 
+            <!-- Context and emotion controls -->
+            <div class="control-group">
+                <label>Context & Emotion:</label>
+                <div class="context-emotion-grid">
+                    <div class="context-section">
+                        <label for="context-selector">Context:</label>
+                        <select id="context-selector">
+                            <option value="neutral">Neutral</option>
+                            <option value="greeting">Greeting</option>
+                            <option value="farewell">Farewell</option>
+                            <option value="question">Question</option>
+                            <option value="explanation">Explanation</option>
+                            <option value="error">Error</option>
+                            <option value="success">Success</option>
+                            <option value="thinking">Thinking</option>
+                            <option value="confused">Confused</option>
+                        </select>
+                    </div>
+                    
+                    <div class="emotion-section">
+                        <label>Quick Emotions:</label>
+                        <div class="emotion-buttons">
+                            <button class="emotion-btn active" data-emotion="neutral" title="Neutral expression">
+                                😐 Neutral
+                            </button>
+                            <button class="emotion-btn" data-emotion="happy" title="Happy expression">
+                                😊 Happy
+                            </button>
+                            <button class="emotion-btn" data-emotion="sad" title="Sad expression">
+                                😢 Sad
+                            </button>
+                            <button class="emotion-btn" data-emotion="surprised" title="Surprised expression">
+                                😲 Surprised
+                            </button>
+                            <button class="emotion-btn" data-emotion="angry" title="Angry expression">
+                                😠 Angry
+                            </button>
+                            <button class="emotion-btn" data-emotion="fearful" title="Fearful expression">
+                                😨 Fear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced controls -->
+            <div class="control-group">
+                <label>Advanced Controls:</label>
+                <div class="advanced-controls">
+                    <div class="toggle-row">
+                        <div class="toggle-container">
+                            <input type="checkbox" id="eye-tracking-toggle">
+                            <label for="eye-tracking-toggle">👁️ Mouse Eye Tracking</label>
+                        </div>
+                        <div class="toggle-container">
+                            <input type="checkbox" id="idle-animations-toggle" checked>
+                            <label for="idle-animations-toggle">🔄 Idle Animations</label>
+                        </div>
+                    </div>
+                    
+                    <div class="toggle-row">
+                        <div class="toggle-container">
+                            <input type="checkbox" id="auto-emotion-toggle" checked>
+                            <label for="auto-emotion-toggle">🎭 Auto Emotions</label>
+                        </div>
+                        <div class="toggle-container">
+                            <input type="checkbox" id="debug-mode-toggle">
+                            <label for="debug-mode-toggle">🔧 Debug Mode</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Expression intensity -->
+            <div class="control-group">
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>Expression Intensity</span>
+                        <span id="emotion-intensity-value" class="slider-value">80%</span>
+                    </div>
+                    <input type="range" id="emotion-intensity" min="0" max="1" step="0.1" value="0.8">
+                </div>
+            </div>
+
+            <!-- Basic speech controls -->
             <div class="control-group">
                 <div class="slider-container">
                     <div class="slider-label">
@@ -51,19 +194,52 @@
                 </div>
             </div>
 
+            <!-- Action buttons -->
             <div class="button-group">
-                <button id="speak-btn">
+                <button id="speak-btn" class="primary-btn">
                     🎤 Speak
                 </button>
-                <button id="stop-btn" disabled>
+                <button id="stop-btn" class="secondary-btn" disabled>
                     ⏹️ Stop
                 </button>
+            </div>
+
+            <!-- Preset messages -->
+            <div class="control-group">
+                <label>Quick Messages:</label>
+                <div class="preset-messages">
+                    <button class="preset-btn" data-text="Hello! How are you doing today?" data-context="greeting">
+                        👋 Greeting
+                    </button>
+                    <button class="preset-btn" data-text="I'm so happy to see you! This is wonderful!" data-context="success">
+                        😊 Happy
+                    </button>
+                    <button class="preset-btn" data-text="Can you help me understand this better?" data-context="question">
+                        ❓ Question
+                    </button>
+                    <button class="preset-btn" data-text="I'm sorry, but something went wrong." data-context="error">
+                        😔 Apology
+                    </button>
+                    <button class="preset-btn" data-text="Let me think about this for a moment..." data-context="thinking">
+                        🤔 Thinking
+                    </button>
+                    <button class="preset-btn" data-text="Thank you and have a great day!" data-context="farewell">
+                        👋 Farewell
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="status-bar">
-        <span id="status-text" class="status-connecting">Connecting to TTS server...</span>
+        <div class="status-content">
+            <span id="status-text" class="status-connecting">Initializing enhanced avatar system...</span>
+            <div class="status-indicators">
+                <span id="tts-status" class="status-indicator">TTS: ⏳</span>
+                <span id="avatar-status" class="status-indicator">Avatar: ⏳</span>
+                <span id="emotion-status" class="status-indicator">Emotions: ⏳</span>
+            </div>
+        </div>
     </div>
 
     <!-- Three.js for 3D rendering -->
@@ -73,13 +249,202 @@
 
     <!-- Application modules -->
     <script type="module">
-        import { App } from './js/App.js';
+        import { EnhancedApp } from './js/EnhancedApp.js';
+        import { EmotionAnalyzer } from './js/EmotionAnalyzer.js';
+        
+        // Global application instance
+        let app;
+        let emotionAnalyzer;
         
         // Initialize the application when the page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            const app = new App();
-            app.initialize();
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Initialize emotion analyzer
+                emotionAnalyzer = new EmotionAnalyzer();
+                
+                // Initialize enhanced application
+                app = new EnhancedApp();
+                await app.initialize();
+                
+                // Setup additional event listeners
+                setupAdditionalEventListeners();
+                
+                // Store global reference for cleanup
+                window.enhancedApp = app;
+                window.emotionAnalyzer = emotionAnalyzer;
+                
+                console.log('Enhanced Avatar Application initialized successfully!');
+                
+            } catch (error) {
+                console.error('Failed to initialize application:', error);
+                document.getElementById('status-text').textContent = `Initialization failed: ${error.message}`;
+                document.getElementById('status-text').className = 'status-error';
+            }
         });
+        
+        /**
+         * Setup additional event listeners for enhanced features
+         */
+        function setupAdditionalEventListeners() {
+            // Character counter
+            const textInput = document.getElementById('text-input');
+            const charCount = document.getElementById('char-count');
+            
+            textInput.addEventListener('input', () => {
+                const count = textInput.value.length;
+                charCount.textContent = count;
+                
+                if (count > 900) {
+                    charCount.style.color = '#f44336';
+                } else if (count > 700) {
+                    charCount.style.color = '#ff9800';
+                } else {
+                    charCount.style.color = '';
+                }
+            });
+            
+            // Preset message buttons
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const text = btn.getAttribute('data-text');
+                    const context = btn.getAttribute('data-context');
+                    
+                    textInput.value = text;
+                    
+                    if (context) {
+                        const contextSelector = document.getElementById('context-selector');
+                        contextSelector.value = context;
+                        contextSelector.dispatchEvent(new Event('change'));
+                    }
+                    
+                    // Update character counter
+                    charCount.textContent = text.length;
+                    
+                    // Auto-speak if not currently speaking
+                    if (!app.isSpeaking) {
+                        setTimeout(() => {
+                            document.getElementById('speak-btn').click();
+                        }, 500);
+                    }
+                });
+            });
+            
+            // Debug mode toggle
+            const debugToggle = document.getElementById('debug-mode-toggle');
+            const debugPanel = document.getElementById('expression-debug');
+            
+            debugToggle.addEventListener('change', (e) => {
+                debugPanel.style.display = e.target.checked ? 'block' : 'none';
+                
+                if (e.target.checked) {
+                    startExpressionDebugUpdates();
+                }
+            });
+            
+            // Auto emotion toggle
+            const autoEmotionToggle = document.getElementById('auto-emotion-toggle');
+            autoEmotionToggle.addEventListener('change', (e) => {
+                if (app && app.emotionSystem) {
+                    app.emotionSystem.autoDetect = e.target.checked;
+                }
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+Shift+E for emotion panel toggle
+                if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+                    debugToggle.checked = !debugToggle.checked;
+                    debugToggle.dispatchEvent(new Event('change'));
+                }
+                
+                // Number keys for quick emotions (1-6)
+                if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.altKey) {
+                    const emotions = ['neutral', 'happy', 'sad', 'surprised', 'angry', 'fearful'];
+                    const emotionIndex = parseInt(e.key) - 1;
+                    
+                    if (emotionIndex < emotions.length) {
+                        const emotionBtn = document.querySelector(`[data-emotion="${emotions[emotionIndex]}"]`);
+                        if (emotionBtn) {
+                            emotionBtn.click();
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Start debug panel updates
+         */
+        function startExpressionDebugUpdates() {
+            function updateDebugPanel() {
+                if (!document.getElementById('debug-mode-toggle').checked) {
+                    return;
+                }
+                
+                if (app && app.avatarController) {
+                    const expressionStates = app.avatarController.getExpressionStates();
+                    
+                    Object.keys(expressionStates).forEach(expression => {
+                        const barFill = document.querySelector(`[data-expression="${expression}"]`);
+                        const barValue = barFill?.parentElement?.parentElement?.querySelector('.bar-value');
+                        
+                        if (barFill && barValue) {
+                            const intensity = expressionStates[expression] || 0;
+                            const percentage = Math.round(intensity * 100);
+                            
+                            barFill.style.width = `${percentage}%`;
+                            barValue.textContent = `${percentage}%`;
+                            
+                            // Color coding
+                            if (percentage > 70) {
+                                barFill.style.backgroundColor = '#4caf50'; // Green
+                            } else if (percentage > 30) {
+                                barFill.style.backgroundColor = '#ff9800'; // Orange
+                            } else {
+                                barFill.style.backgroundColor = '#2196f3'; // Blue
+                            }
+                        }
+                    });
+                    
+                    // Update emotion and context indicators
+                    const currentEmotionEl = document.getElementById('current-emotion');
+                    const currentContextEl = document.getElementById('current-context');
+                    
+                    if (currentEmotionEl && app.emotionSystem) {
+                        currentEmotionEl.textContent = app.emotionSystem.currentEmotion || 'Neutral';
+                    }
+                    
+                    if (currentContextEl && app.contextSystem) {
+                        currentContextEl.textContent = app.contextSystem.currentContext || 'Neutral';
+                    }
+                }
+                
+                // Continue updating
+                requestAnimationFrame(updateDebugPanel);
+            }
+            
+            updateDebugPanel();
+        }
+        
+        // Utility functions for external access
+        window.setEmotion = (emotion, intensity = 0.8) => {
+            if (app && app.avatarController) {
+                app.triggerEmotion(emotion, intensity);
+            }
+        };
+        
+        window.setContext = (context) => {
+            if (app) {
+                app.setContext(context);
+            }
+        };
+        
+        window.analyzeEmotion = (text) => {
+            if (emotionAnalyzer) {
+                return emotionAnalyzer.analyze(text);
+            }
+            return null;
+        };
     </script>
 </body>
 </html>
